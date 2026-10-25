@@ -66,6 +66,7 @@ test('joinRel joins posix and rejects escapes', () => {
 
 test('toPosix and isPartialName', () => {
   expect(toPosix('a\\b\\c')).toBe('a/b/c')
-  expect(isPartialName('x.zip.partial')).toBe(true)
+  expect(isPartialName('.0a1b2c3d4e5f.bm-partial')).toBe(true)
+  expect(isPartialName('report.partial')).toBe(false)
   expect(isPartialName('x.zip')).toBe(false)
 })

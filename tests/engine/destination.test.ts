@@ -67,11 +67,12 @@ describe('FsDestination', () => {
     const root = await tmpDir()
     await makeTree(root, {
       'S/current/a.txt': '',
-      'S/current/x.partial': '',
+      'S/current/.0a1b2c3d4e5f.bm-partial': '',
+      'S/current/user.partial': 'u',
       'S/current/.backup-manager.json': '{}'
     })
     const d = new FsDestination(root)
-    expect((await d.walk('S/current', [])).map((f) => f.rel)).toEqual(['a.txt'])
+    expect((await d.walk('S/current', [])).map((f) => f.rel)).toEqual(['a.txt', 'user.partial'])
     expect(await d.walk('S/nothing', [])).toEqual([])
   })
 
@@ -108,17 +109,23 @@ describe('FsDestination', () => {
     expect(existsSync(join(root, 'S/current'))).toBe(true)
   })
 
-  test('removePartials deletes partial files and dirs recursively', async () => {
+  test('removePartials sweeps one level, or recursively when asked; user *.partial files are kept', async () => {
     const root = await tmpDir()
     await makeTree(root, {
-      'S/T.partial/a.txt': '',
-      'S/current/x.txt.partial': '',
+      'S/T.bm-partial/a.txt': '',
+      'S/T2/.aaaa.bm-partial': 'inside finalized snapshot',
+      'S/current/d/.bbbb.bm-partial': '',
       'S/current/keep.txt': 'k',
-      'S/T.zip.partial': ''
+      'S/current/user.partial': 'u'
     })
     const d = new FsDestination(root)
-    expect(await d.removePartials('S')).toBe(3)
-    expect(await readTree(root)).toEqual({ 'S/current/keep.txt': 'k' })
+    expect(await d.removePartials('S', false)).toBe(1)
+    expect(await d.removePartials('S/current', true)).toBe(1)
+    expect(await readTree(root)).toEqual({
+      'S/T2/.aaaa.bm-partial': 'inside finalized snapshot',
+      'S/current/keep.txt': 'k',
+      'S/current/user.partial': 'u'
+    })
   })
 
   test('readText / writeTextAtomic', async () => {

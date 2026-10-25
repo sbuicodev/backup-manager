@@ -4,6 +4,7 @@ import { Transform, type Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import yazl from 'yazl'
 import type { Destination } from '../destination'
+import { partialSiblingRel } from '../fsutil'
 
 export type ZipEntry = { absPath: string; name: string; mtimeMs: number }
 
@@ -17,7 +18,7 @@ export type WriteZipOptions = {
 const SKIPPABLE = new Set(['ENOENT', 'EACCES', 'EPERM', 'EBUSY'])
 
 /**
- * Streams `entries` into `<rel>.partial`, verifies the entry count, then renames to `rel`.
+ * Streams `entries` into a partial sibling of `rel`, verifies the entry count, then renames to `rel`.
  * Files are opened one at a time so large trees don't exhaust file descriptors.
  */
 export async function writeZip(
@@ -27,7 +28,7 @@ export async function writeZip(
   level: number,
   opts: WriteZipOptions
 ): Promise<{ bytes: number; entryCount: number }> {
-  const partialRel = `${rel}.partial`
+  const partialRel = partialSiblingRel(rel)
   const out = await dest.writeStream(partialRel)
   const zip = new yazl.ZipFile()
   const zipError = new Promise<never>((_, reject) => zip.on('error', reject))

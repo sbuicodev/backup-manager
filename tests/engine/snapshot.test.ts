@@ -113,9 +113,24 @@ describe('snapshot', () => {
 
   test('stale partial snapshot from a crash is removed', async () => {
     const { root, source } = await setup('zip-whole')
-    await makeTree(root, { 'S/2020-01-01_000000.zip.partial': 'junk' })
+    await makeTree(root, {
+      'S/.0a1b2c3d4e5f.bm-partial': 'junk',
+      'S/2020-01-01_000000.bm-partial/x': 'junk'
+    })
     const dest = new FsDestination(root)
     await (await prepareSnapshot(await ctxFor(source, dest, NOW))).execute(exec())
     expect(Object.keys(await readTree(root))).toEqual([`S/${TS}.zip`])
   })
+})
+
+test('user files named *.partial survive inside finalized snapshots', async () => {
+  const { src, root, source } = await setup('copy')
+  await makeTree(src, { 'report.partial': 'mine' })
+  const dest = new FsDestination(root)
+  await (await prepareSnapshot(await ctxFor(source, dest, NOW))).execute(exec())
+  const later = new Date(NOW.getTime() + 60_000)
+  await (await prepareSnapshot(await ctxFor(source, dest, later))).execute(exec())
+  const tree = await readTree(root)
+  expect(tree[`S/${TS}/report.partial`]).toBe('mine')
+  expect(tree[`S/${formatTimestamp(later)}/report.partial`]).toBe('mine')
 })

@@ -21,7 +21,7 @@ test('format/parse round-trip with suffix and zip', () => {
 
 test.each([
   '2026-10-25_165200.partial',
-  '2026-10-25_165200.zip.partial',
+  '2026-10-25_165200.bm-partial',
   'current',
   '.trash',
   '2026-13-45_999999',
@@ -33,6 +33,5 @@ test.each([
 test('uniqueTimestampName skips names taken as dir, zip or partial', () => {
   expect(uniqueTimestampName('T', new Set())).toBe('T')
   expect(uniqueTimestampName('T', new Set(['T.zip']))).toBe('T-2')
-  expect(uniqueTimestampName('T', new Set(['T', 'T-2.partial']))).toBe('T-3')
-  expect(uniqueTimestampName('T', new Set(['T.zip.partial']))).toBe('T-2')
+  expect(uniqueTimestampName('T', new Set(['T', 'T-2.bm-partial']))).toBe('T-3')
 })

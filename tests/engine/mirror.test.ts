@@ -206,7 +206,7 @@ describe('mirror-copy', () => {
 
   test('stale .partial from a crash is removed at job start', async () => {
     const { source, dest, root } = await setup({ 'a.txt': 'a' })
-    await makeTree(root, { 'S/current/old.txt.partial': 'junk' })
+    await makeTree(root, { 'S/current/sub/.0a1b2c3d4e5f.bm-partial': 'junk' })
     await run(source, dest)
     expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'a' })
   })
@@ -235,6 +235,27 @@ describe('mirror-copy', () => {
     await run(source, dest, exec(events))
     const files = events.filter((e) => e.type === 'file')
     expect(files.at(-1)).toMatchObject({ type: 'file', bytesDone: 5, bytesTotal: 5 })
+  })
+})
+
+describe('awkward file names', () => {
+  test('user files named *.partial are mirrored once and not re-copied', async () => {
+    const { source, dest, root } = await setup({ 'a.partial': 'mine', 'b.txt': 'b' })
+    await run(source, dest)
+    expect((await readTree(root))['S/current/a.partial']).toBe('mine')
+    const r = await run(source, dest)
+    expect(r.counts.copied + r.counts.updated).toBe(0)
+  })
+
+  test('a 250-character file name is backed up', async () => {
+    const long = 'n'.repeat(246) + '.txt'
+    const { source, dest, root } = await setup({ [long]: 'x', 'z.txt': 'z' })
+    const r = await run(source, dest)
+    expect(r.status).toBe('completed')
+    expect(Object.keys(await readTree(root)).sort()).toEqual([
+      `S/current/${long}`,
+      'S/current/z.txt'
+    ])
   })
 })
 
@@ -302,24 +323,34 @@ describe('unreadable source entries never cost backup data', () => {
   const posixNonRoot = process.platform === 'win32' || process.getuid?.() === 0 ? test.skip : test
 
   for (const deletion of ['exact', 'trash'] as const) {
-    posixNonRoot(`mirror-copy (${deletion}): backup of an unreadable subfolder is kept`, async () => {
-      const { src, source, dest, root } = await setup({ 'a.txt': 'a', 'sub/keep.txt': 'k' })
-      source.mirror.deletion = deletion
-      await run(source, dest)
-      await chmod(join(src, 'sub'), 0o000)
-      try {
-        const r = await run(source, dest)
-        expect(r.counts.deleted + r.counts.trashed).toBe(0)
-        expect(r.warnings.map((w) => w.path)).toContain('sub')
-        expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'a', 'S/current/sub/keep.txt': 'k' })
-      } finally {
-        await chmod(join(src, 'sub'), 0o755)
+    posixNonRoot(
+      `mirror-copy (${deletion}): backup of an unreadable subfolder is kept`,
+      async () => {
+        const { src, source, dest, root } = await setup({ 'a.txt': 'a', 'sub/keep.txt': 'k' })
+        source.mirror.deletion = deletion
+        await run(source, dest)
+        await chmod(join(src, 'sub'), 0o000)
+        try {
+          const r = await run(source, dest)
+          expect(r.counts.deleted + r.counts.trashed).toBe(0)
+          expect(r.warnings.map((w) => w.path)).toContain('sub')
+          expect(await readTree(root)).toEqual({
+            'S/current/a.txt': 'a',
+            'S/current/sub/keep.txt': 'k'
+          })
+        } finally {
+          await chmod(join(src, 'sub'), 0o755)
+        }
       }
-    })
+    )
   }
 
   posixNonRoot('mirror-zip keeps an archive whose members became unreadable', async () => {
-    const { src, source, dest, root } = await setup({ 'A/x.txt': 'x', 'A/sub/y.txt': 'y', 'B/z.txt': 'z' })
+    const { src, source, dest, root } = await setup({
+      'A/x.txt': 'x',
+      'A/sub/y.txt': 'y',
+      'B/z.txt': 'z'
+    })
     source.packaging = 'zip-children'
     await run(source, dest)
     const before = await readFile(join(root, 'S/current/A.zip'))
@@ -334,18 +365,21 @@ describe('unreadable source entries never cost backup data', () => {
     }
   })
 
-  posixNonRoot('mirror-zip does not remove the archive of a wholly unreadable top-level folder', async () => {
-    const { src, source, dest, root } = await setup({ 'A/x.txt': 'x', 'B/z.txt': 'z' })
-    source.packaging = 'zip-children'
-    source.mirror.deletion = 'exact'
-    await run(source, dest)
-    await chmod(join(src, 'B'), 0o000)
-    try {
-      const r = await run(source, dest)
-      expect(r.counts.deleted).toBe(0)
-      expect(Object.keys(await readTree(root))).toContain('S/current/B.zip')
-    } finally {
-      await chmod(join(src, 'B'), 0o755)
+  posixNonRoot(
+    'mirror-zip does not remove the archive of a wholly unreadable top-level folder',
+    async () => {
+      const { src, source, dest, root } = await setup({ 'A/x.txt': 'x', 'B/z.txt': 'z' })
+      source.packaging = 'zip-children'
+      source.mirror.deletion = 'exact'
+      await run(source, dest)
+      await chmod(join(src, 'B'), 0o000)
+      try {
+        const r = await run(source, dest)
+        expect(r.counts.deleted).toBe(0)
+        expect(Object.keys(await readTree(root))).toContain('S/current/B.zip')
+      } finally {
+        await chmod(join(src, 'B'), 0o755)
+      }
     }
-  })
+  )
 })

@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { open, rename, rm } from 'node:fs/promises'
 
 /** Writes text to `file` via a temp file + fsync + rename, so readers never see a partial file. */
@@ -39,6 +39,21 @@ export function joinRel(...parts: string[]): string {
   return segs.join('/')
 }
 
+/** Suffix of every in-progress output the app writes; specific enough not to clash with user files. */
+export const PARTIAL_SUFFIX = '.bm-partial'
+
 export function isPartialName(name: string): boolean {
-  return name.endsWith('.partial')
+  return name.endsWith(PARTIAL_SUFFIX)
+}
+
+/**
+ * Temp name for writing `rel` atomically: a short hidden sibling, so even names near the
+ * filesystem's 255-byte limit still get a valid temp name.
+ */
+export function partialSiblingRel(rel: string): string {
+  const r = joinRel(rel)
+  const slash = r.lastIndexOf('/')
+  const base = r.slice(slash + 1)
+  const hash = createHash('sha1').update(base).digest('hex').slice(0, 12)
+  return `${slash < 0 ? '' : r.slice(0, slash + 1)}.${hash}${PARTIAL_SUFFIX}`
 }

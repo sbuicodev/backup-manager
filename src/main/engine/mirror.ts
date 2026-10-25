@@ -104,7 +104,8 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
   const execute = (x: ExecContext): ReturnType<PreparedJob['execute']> =>
     asJobAbort(ctx.dest, async () => {
       const run = new JobRun(ctx, x, plan.bytes)
-      await ctx.dest.removePartials(slug)
+      await ctx.dest.removePartials(slug, false)
+      await ctx.dest.removePartials(current, true)
       await ctx.dest.mkdirp(current)
       // Removals first: on case-insensitive filesystems a case-only rename must not
       // have its freshly copied file trashed afterwards.
@@ -194,7 +195,8 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
   const execute = (x: ExecContext): ReturnType<PreparedJob['execute']> =>
     asJobAbort(ctx.dest, async () => {
       const run = new JobRun(ctx, x, plan.bytes)
-      await ctx.dest.removePartials(slug)
+      await ctx.dest.removePartials(slug, false)
+      await ctx.dest.removePartials(current, true)
       await ctx.dest.mkdirp(current)
       const archives: Record<string, string> = {}
       for (const t of targets) {

@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import type { JobPlan } from '@shared/types'
+import { PARTIAL_SUFFIX } from './fsutil'
 import { JobRun, asJobAbort, type ExecContext, type JobContext, type PreparedJob } from './job'
 import { formatTimestamp, uniqueTimestampName } from './naming'
 import { computeZipTargets, type ZipTarget } from './packaging/targets'
@@ -30,11 +31,12 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
     asJobAbort(dest, async () => {
       const run = new JobRun(ctx, x, plan.bytes)
       const slug = source.slug
-      await dest.removePartials(slug)
+      // Partials only ever live at the top of <slug>/; finalized snapshots are never swept.
+      await dest.removePartials(slug, false)
       await dest.mkdirp(slug)
       const taken = new Set((await dest.list(slug)).map((e) => e.name))
       const name = uniqueTimestampName(formatTimestamp(ctx.now), taken)
-      const partialDir = `${slug}/${name}.partial`
+      const partialDir = `${slug}/${name}${PARTIAL_SUFFIX}`
       const absOf = (rel: string): string => join(source.path, ...rel.split('/'))
       const zipTo = async (rel: string, t: ZipTarget): Promise<void> => {
         await writeZip(

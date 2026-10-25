@@ -1,3 +1,5 @@
+import { PARTIAL_SUFFIX } from './fsutil'
+
 const pad = (n: number, w = 2): string => String(n).padStart(w, '0')
 
 /** Local-time timestamp `YYYY-MM-DD_HHmmss`. */
@@ -31,7 +33,7 @@ export function parseSnapshotName(name: string): Date | null {
 /** First of `base`, `base-2`, … not taken as a dir, zip or partial of either. */
 export function uniqueTimestampName(base: string, taken: Set<string>): string {
   const isTaken = (c: string): boolean =>
-    [c, `${c}.zip`, `${c}.partial`, `${c}.zip.partial`].some((n) => taken.has(n))
+    [c, `${c}.zip`, `${c}${PARTIAL_SUFFIX}`].some((n) => taken.has(n))
   if (!isTaken(base)) return base
   for (let n = 2; ; n++) if (!isTaken(`${base}-${n}`)) return `${base}-${n}`
 }

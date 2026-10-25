@@ -4,7 +4,7 @@ import { dirname, join, posix } from 'node:path'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { FileEntry } from '@shared/types'
-import { atomicWriteText, isPartialName, joinRel } from './fsutil'
+import { atomicWriteText, isPartialName, joinRel, partialSiblingRel } from './fsutil'
 import { walkTree } from './walk'
 
 export const MANIFEST_NAME = '.backup-manager.json'
@@ -33,7 +33,8 @@ export interface Destination {
   rename(fromRel: string, toRel: string): Promise<void>
   remove(rel: string): Promise<void>
   removeEmptyDirs(rel: string): Promise<void>
-  removePartials(rel: string): Promise<number>
+  /** Deletes in-progress outputs directly in `rel` (and below it when `recursive`). */
+  removePartials(rel: string, recursive: boolean): Promise<number>
   readText(rel: string): Promise<string | null>
   writeTextAtomic(rel: string, text: string): Promise<void>
   abs(rel: string): string
@@ -109,7 +110,7 @@ export class FsDestination implements Destination {
     onBytes?: (n: number) => void
   ): Promise<{ bytes: number }> {
     const target = this.abs(rel)
-    const partial = `${target}.partial`
+    const partial = this.abs(partialSiblingRel(rel))
     const srcStat = await stat(absSrc)
     const parent = posix.dirname(joinRel(rel))
     await this.mkdirp(parent === '.' ? '' : parent)
@@ -184,7 +185,7 @@ export class FsDestination implements Destination {
     await sweep(this.abs(rel), true)
   }
 
-  async removePartials(rel: string): Promise<number> {
+  async removePartials(rel: string, recursive: boolean): Promise<number> {
     let count = 0
     const sweep = async (abs: string): Promise<void> => {
       let entries
@@ -199,7 +200,7 @@ export class FsDestination implements Destination {
         if (isPartialName(e.name)) {
           await rm(child, { recursive: true, force: true })
           count++
-        } else if (e.isDirectory()) {
+        } else if (recursive && e.isDirectory()) {
           await sweep(child)
         }
       }
