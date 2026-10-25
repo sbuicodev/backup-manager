@@ -158,3 +158,33 @@ describe('schema', () => {
     expect(errs[0]).toMatch(/^version: /)
   })
 })
+
+describe('slug and path safety', () => {
+  test.each(['.', '..', 'a/b', 'a\\b', 'trailing.', ' lead', 'CON', 'nul', 'x.bm-partial', 'a:b'])(
+    'rejects slug %j',
+    (slug) => {
+      const cfg = cfgWith((c) => c.sources.push({ ...newSource('/a', 'A', []), slug }))
+      expect(errorsOf(cfg).join('\n')).toMatch(/slug/)
+    }
+  )
+
+  test.each(['Docs', 'Docs-2', 'My-Documents', 'CON-1', 'photos.2024'])('accepts slug %j', (slug) => {
+    const cfg = cfgWith((c) => c.sources.push({ ...newSource('/a', 'A', []), slug }))
+    expect(errorsOf(cfg)).toEqual([])
+  })
+
+  test.each(['relative/dir', './x', '~/Documents', 'C:relative'])('rejects relative path %j', (p) => {
+    const cfg = cfgWith((c) => {
+      c.sources.push(newSource(p, 'A', []))
+      c.destinations.push(newDestination(`${p}-dest`, 'D'))
+    })
+    const errs = errorsOf(cfg).join('\n')
+    expect(errs).toMatch(/sources\.0\.path/)
+    expect(errs).toMatch(/destinations\.0\.path/)
+  })
+
+  test.each(['/Users/me/Docs', 'C:\\Users\\me', 'D:/Backups', '\\\\nas\\share'])('accepts absolute path %j', (p) => {
+    const cfg = cfgWith((c) => c.sources.push(newSource(p, 'A', [])))
+    expect(errorsOf(cfg)).toEqual([])
+  })
+})

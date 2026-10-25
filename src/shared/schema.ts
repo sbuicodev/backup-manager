@@ -4,6 +4,19 @@ export const DEFAULT_GLOBAL_EXCLUDES = ['.DS_Store', 'Thumbs.db', 'desktop.ini']
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 
+/** POSIX absolute, Windows drive-absolute (C:\ or C:/) or UNC (\\server\share). */
+const ABSOLUTE_PATH = /^(\/|[A-Za-z]:[\\/]|\\\\)/
+const AbsolutePath = z.string().regex(ABSOLUTE_PATH, 'must be an absolute path')
+
+/** A slug is used as a folder name on every destination: it must already be in slugify's safe form. */
+const Slug = z
+  .string()
+  .min(1)
+  .refine((s) => slugify(s, []) === s && !s.toLowerCase().endsWith('.bm-partial'), {
+    message:
+      'slug must be a plain folder name (letters, digits, - _ .; no separators or reserved names)'
+  })
+
 export const WeekdaySchema = z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
 
 export const ScheduleSchema = z.discriminatedUnion('kind', [
@@ -25,15 +38,15 @@ export const SettingsSchema = z.object({
 export const DestinationSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  path: z.string().min(1),
+  path: AbsolutePath,
   enabled: z.boolean()
 })
 
 export const SourceSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  slug: z.string().min(1),
-  path: z.string().min(1),
+  slug: Slug,
+  path: AbsolutePath,
   enabled: z.boolean(),
   mode: z.enum(['mirror', 'snapshot']),
   packaging: z.enum(['copy', 'zip-whole', 'zip-children']),
