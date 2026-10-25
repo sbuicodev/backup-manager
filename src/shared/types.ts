@@ -26,7 +26,8 @@ export type JobPlan = {
   destId: string
   kind: JobKind
   status: 'ready' | 'skipped'
-  reason?: 'source-missing' | 'destination-missing'
+  reason?: 'source-missing' | 'destination-missing' | 'error'
+  error?: string
   counts: PlanCounts
   bytes: number
   skippedEntries: SkippedEntry[]

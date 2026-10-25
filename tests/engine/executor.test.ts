@@ -118,3 +118,24 @@ test('zero jobs → completed', async () => {
   const log = await runBackup(defaultConfig(), {}, opts(history))
   expect(log).toMatchObject({ status: 'completed', jobs: [] })
 })
+
+test('an error while preparing one job fails only that job; the rest run and history is written', async () => {
+  const { cfg, history, base } = await world()
+  const d1 = join(base, 'd1')
+  const makeDestination = (r: string): FsDestination =>
+    r === d1
+      ? new (class extends FsDestination {
+          override async walk(): Promise<never> {
+            throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
+          }
+        })(r)
+      : new FsDestination(r)
+  const log = await runBackup(cfg, {}, opts(history, { makeDestination }))
+  expect(log.jobs.map((j) => [j.status, j.reason])).toEqual([
+    ['failed', 'error'],
+    ['completed', undefined]
+  ])
+  expect(log.jobs[0].error).toMatch(/EACCES/)
+  expect(log.status).toBe('failed')
+  expect((await listRuns(history)).map((r) => r.id)).toEqual(['run-1'])
+})

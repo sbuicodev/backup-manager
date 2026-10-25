@@ -222,7 +222,38 @@ export class Scheduler {
   private async execute(run: QueuedRun, signal: AbortSignal): Promise<void> {
     this.state.activeRun = { runId: run.id, jobs: run.jobs.map(jobKey) }
     await this.save()
-    const log = await this.deps.execute(run, signal, (r) => this.onJobEnd(run, r))
+    const startedAt = this.deps.now().toISOString()
+    let log: RunLog
+    try {
+      log = await this.deps.execute(run, signal, (r) => this.onJobEnd(run, r))
+    } catch (err) {
+      console.error(`run ${run.id} failed`, err)
+      const error = (err as Error).message
+      log = {
+        id: run.id,
+        trigger: run.trigger,
+        startedAt,
+        endedAt: this.deps.now().toISOString(),
+        status: 'failed',
+        jobs: run.jobs.map((j) => ({
+          ...j,
+          status: 'failed',
+          reason: 'error',
+          error,
+          counts: {
+            copied: 0,
+            updated: 0,
+            zipped: 0,
+            trashed: 0,
+            deleted: 0,
+            pruned: 0,
+            skipped: 0
+          },
+          bytesWritten: 0,
+          warnings: []
+        }))
+      }
+    }
     this.state.activeRun = null
     await this.save()
     this.changed()

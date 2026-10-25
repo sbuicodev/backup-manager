@@ -49,7 +49,8 @@ function selectPairs(config: Config, request: RunRequest): [Source, DestinationC
 function skippedPlan(
   source: Source,
   destId: string,
-  reason: 'source-missing' | 'destination-missing'
+  reason: NonNullable<JobPlan['reason']>,
+  error?: string
 ): JobPlan {
   return {
     sourceId: source.id,
@@ -57,6 +58,7 @@ function skippedPlan(
     kind: jobKind(source),
     status: 'skipped',
     reason,
+    ...(error ? { error } : {}),
     counts: { copy: 0, update: 0, zip: 0, trash: 0, delete: 0, unchanged: 0 },
     bytes: 0,
     skippedEntries: []
@@ -107,13 +109,18 @@ export async function planRun(
       srcSkipped: walked.skipped,
       now
     }
-    const job =
-      source.mode === 'snapshot'
-        ? await prepareSnapshot(ctx)
-        : source.packaging === 'copy'
-          ? await prepareMirrorCopy(ctx)
-          : await prepareMirrorZip(ctx)
-    prepared.push(job)
+    try {
+      const job =
+        source.mode === 'snapshot'
+          ? await prepareSnapshot(ctx)
+          : source.packaging === 'copy'
+            ? await prepareMirrorCopy(ctx)
+            : await prepareMirrorZip(ctx)
+      prepared.push(job)
+    } catch (err) {
+      // e.g. the existing backup folder is unreadable: fail this job, not the whole run.
+      prepared.push({ plan: skippedPlan(source, d.id, 'error', (err as Error).message) })
+    }
   }
   return { plan: { createdAt: now.toISOString(), jobs: prepared.map((p) => p.plan) }, prepared }
 }

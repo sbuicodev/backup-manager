@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
   defaultConfig,
   newDestination,
@@ -332,4 +332,25 @@ test('onChange notifies on pause', async () => {
   h.s.onChange(() => calls++)
   await h.s.pause('forever')
   expect(calls).toBeGreaterThan(0)
+})
+
+test('a run whose executor throws still clears activeRun and reports a failed run', async () => {
+  const h = await harness([null])
+  const finished: RunLog[] = []
+  const s = new Scheduler({
+    ...(h.s as unknown as { deps: SchedulerDeps }).deps,
+    execute: async () => {
+      throw new Error('boom')
+    },
+    onRunFinished: (log) => finished.push(log)
+  })
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  await s.start()
+  s.runNow()
+  await s.whenIdle()
+  spy.mockRestore()
+  expect((await loadState(h.stateFile, h.cfg)).activeRun).toBeNull()
+  expect(finished).toHaveLength(1)
+  expect(finished[0]).toMatchObject({ status: 'failed', trigger: 'manual' })
+  expect(finished[0].jobs[0]).toMatchObject({ status: 'failed', reason: 'error', error: 'boom' })
 })

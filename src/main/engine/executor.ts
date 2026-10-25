@@ -79,6 +79,12 @@ export async function runBackup(
       results.push(emptyResult(plan, 'cancelled', { reason: 'cancelled' }))
       continue
     }
+    if (plan.reason === 'error') {
+      const r = emptyResult(plan, 'failed', { reason: 'error', error: plan.error })
+      results.push(r)
+      emit({ type: 'job-end', runId, result: r })
+      continue
+    }
     if (plan.status === 'skipped' || !p.execute) {
       const r = emptyResult(plan, 'skipped', { reason: plan.reason })
       emit({

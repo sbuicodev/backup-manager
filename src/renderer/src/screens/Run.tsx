@@ -72,7 +72,10 @@ function PlanView({ plan, config }: { plan: Plan; config: Config }): React.JSX.E
               {j.status === 'skipped' ? (
                 <span className="flex items-center gap-2">
                   <StatusBadge status="skipped" />
-                  <span className="text-muted-foreground text-sm">{REASONS[j.reason ?? '']}</span>
+                  <span className="text-muted-foreground text-sm">
+                    {REASONS[j.reason ?? '']}
+                    {j.error && `: ${j.error}`}
+                  </span>
                 </span>
               ) : (
                 <span className="text-sm">
