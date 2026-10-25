@@ -18,7 +18,8 @@ const api: Api = {
     save: (c) => invoke(CH.configSave, c),
     export: () => invoke(CH.configExport),
     import: () => invoke(CH.configImport),
-    reset: () => invoke(CH.configReset)
+    reset: () => invoke(CH.configReset),
+    onChange: (cb) => subscribe(CH.configChanged, cb)
   },
   dialog: { pickFolder: () => invoke(CH.pickFolder) },
   destinations: { availability: () => invoke(CH.availability) },

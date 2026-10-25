@@ -61,11 +61,15 @@ test('config:save with an invalid config returns errors and leaves the file unch
   stop()
 })
 
-test('config:save persists and config:get reflects it', async () => {
-  const { handlers, base, stop } = await setup()
+test('config:save persists, config:get reflects it, and the change is broadcast', async () => {
+  const { handlers, base, broadcasts, stop } = await setup()
   const cfg = validConfig(base)
   expect(await handlers[CH.configSave](cfg)).toEqual({ ok: true })
   expect(await handlers[CH.configGet]()).toMatchObject({ ok: true, config: cfg })
+  expect(broadcasts.filter(([ch]) => ch === CH.configChanged).at(-1)?.[1]).toMatchObject({
+    ok: true,
+    config: cfg
+  })
   stop()
 })
 

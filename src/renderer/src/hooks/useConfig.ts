@@ -15,6 +15,7 @@ export function useConfig(): UseConfig {
   const reload = useCallback(async () => setState(await api.config.get()), [])
   useEffect(() => {
     void reload()
+    return api.config.onChange(setState)
   }, [reload])
   const save = useCallback(
     async (next: Config) => {

@@ -102,6 +102,7 @@ export async function createServices(opts: ServicesOptions): Promise<Services> {
     const saved = c as Config
     state = { ok: true, config: saved, path: paths.config }
     for (const cb of listeners) cb(saved)
+    broadcast(CH.configChanged, state)
     broadcast(CH.status, scheduler.status())
     return r
   }

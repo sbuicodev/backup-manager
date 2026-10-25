@@ -27,6 +27,7 @@ import { formatRelativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Destinations } from '@/screens/Destinations'
 import { Settings } from '@/screens/Settings'
+import { Sources } from '@/screens/Sources'
 
 const NAV: { id: Screen; label: string; icon: LucideIcon }[] = [
   { id: 'sources', label: 'Sources', icon: FolderInput },
@@ -189,7 +190,8 @@ function App(): React.JSX.Element {
           <div className="flex-1 overflow-auto p-6">
             {screen === 'destinations' && <Destinations cfg={cfg} config={config} />}
             {screen === 'settings' && <Settings cfg={cfg} config={config} path={cfg.state.path} />}
-            {screen !== 'destinations' && screen !== 'settings' && (
+            {screen === 'sources' && <Sources cfg={cfg} config={config} status={status} />}
+            {(screen === 'run' || screen === 'history') && (
               <div className="text-muted-foreground text-sm">
                 {screen} {screenArg}
               </div>

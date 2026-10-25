@@ -15,6 +15,7 @@ export type Api = {
     export(): Promise<boolean>
     import(): Promise<SaveResult | null>
     reset(): Promise<void>
+    onChange(cb: (state: ConfigState) => void): () => void
   }
   dialog: { pickFolder(): Promise<string | null> }
   destinations: { availability(): Promise<Record<string, boolean>> }
@@ -37,7 +38,7 @@ export type Api = {
   app: { onNavigate(cb: (screen: Screen, arg?: string) => void): () => void }
 }
 
-/** IPC channel names: invoke channels mirror Api methods; the last three are main → renderer events. */
+/** IPC channel names: invoke channels mirror Api methods; the last four are main → renderer events. */
 export const CH = {
   configGet: 'config:get',
   configSave: 'config:save',
@@ -56,5 +57,6 @@ export const CH = {
   historyGet: 'history:get',
   progress: 'run:progress',
   status: 'scheduler:status-changed',
+  configChanged: 'config:changed',
   navigate: 'app:navigate'
 } as const
