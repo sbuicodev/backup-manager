@@ -11,6 +11,8 @@ function tsFiles(dir: string): string[] {
 test('engine and scheduler never import electron', () => {
   const files = [...tsFiles('src/main/engine'), ...tsFiles('src/main/scheduler')]
   for (const f of files) {
-    expect(readFileSync(f, 'utf8'), f).not.toMatch(/from ["']electron["']|require\(["']electron["']\)/)
+    expect(readFileSync(f, 'utf8'), f).not.toMatch(
+      /from ["']electron["']|require\(["']electron["']\)/
+    )
   }
 })
