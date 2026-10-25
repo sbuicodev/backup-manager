@@ -75,3 +75,5 @@ export type SchedulerStatus = {
   nextRuns: Array<{ sourceId: string; at: string | null }> // null = manual only
   pendingRetries: JobRequest[]
 }
+
+export type RunSummary = Omit<RunLog, 'jobs'> & { jobCount: number }

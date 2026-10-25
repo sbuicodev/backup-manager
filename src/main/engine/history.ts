@@ -1,12 +1,12 @@
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { RunLog } from '@shared/types'
+import type { RunLog, RunSummary } from '@shared/types'
 import { atomicWriteText } from './fsutil'
 import { formatTimestamp, uniqueTimestampName } from './naming'
 
 export const HISTORY_LIMIT = 200
 
-export type RunSummary = Omit<RunLog, 'jobs'> & { jobCount: number }
+export type { RunSummary }
 
 const SAFE_ID = /^[\w-]+$/
 

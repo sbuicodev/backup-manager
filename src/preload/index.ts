@@ -1,22 +1,44 @@
-import { contextBridge } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { CH, type Api } from '@shared/ipc'
 
-// Custom APIs for renderer
-const api = {}
-
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
+function subscribe<T extends unknown[]>(channel: string, cb: (...args: T) => void): () => void {
+  const listener = (_e: IpcRendererEvent, ...args: unknown[]): void => cb(...(args as T))
+  ipcRenderer.on(channel, listener)
+  return () => {
+    ipcRenderer.removeListener(channel, listener)
   }
-} else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
 }
+
+const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> =>
+  ipcRenderer.invoke(channel, ...args) as Promise<T>
+
+const api: Api = {
+  config: {
+    get: () => invoke(CH.configGet),
+    save: (c) => invoke(CH.configSave, c),
+    export: () => invoke(CH.configExport),
+    import: () => invoke(CH.configImport),
+    reset: () => invoke(CH.configReset)
+  },
+  dialog: { pickFolder: () => invoke(CH.pickFolder) },
+  destinations: { availability: () => invoke(CH.availability) },
+  run: {
+    plan: (ids) => invoke(CH.runPlan, ids),
+    start: (ids) => invoke(CH.runStart, ids),
+    cancel: () => invoke(CH.runCancel),
+    onProgress: (cb) => subscribe(CH.progress, cb)
+  },
+  scheduler: {
+    status: () => invoke(CH.schedulerStatus),
+    pause: (until) => invoke(CH.schedulerPause, until),
+    resume: () => invoke(CH.schedulerResume),
+    onStatus: (cb) => subscribe(CH.status, cb)
+  },
+  history: {
+    list: () => invoke(CH.historyList),
+    get: (id) => invoke(CH.historyGet, id)
+  },
+  app: { onNavigate: (cb) => subscribe(CH.navigate, cb) }
+}
+
+contextBridge.exposeInMainWorld('api', api)
