@@ -12,7 +12,25 @@ export class JobAbort extends Error {
   }
 }
 
-const FILE_LEVEL = new Set(['ENOENT', 'EACCES', 'EPERM', 'EBUSY', 'ELOOP'])
+/**
+ * Errors that concern one file (unreadable, vanished, a name the destination filesystem
+ * rejects, a bad sector…). While the destination is still there they skip that file only.
+ */
+export const FILE_LEVEL = new Set([
+  'ENOENT',
+  'EACCES',
+  'EPERM',
+  'EBUSY',
+  'ELOOP',
+  'ENAMETOOLONG',
+  'EINVAL',
+  'EILSEQ',
+  'EISDIR',
+  'ENOTDIR',
+  'EEXIST',
+  'ENOTEMPTY',
+  'EIO'
+])
 
 /** Decides whether an error only affects one file ("file") or aborts the job (a JobReason). */
 export async function classifyError(err: unknown, dest: Destination): Promise<'file' | JobReason> {

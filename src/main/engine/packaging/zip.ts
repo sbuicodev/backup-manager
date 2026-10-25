@@ -4,6 +4,7 @@ import { Transform, type Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import yazl from 'yazl'
 import type { Destination } from '../destination'
+import { FILE_LEVEL } from '../errors'
 import { partialSiblingRel } from '../fsutil'
 
 export type ZipEntry = { absPath: string; name: string; mtimeMs: number }
@@ -13,9 +14,6 @@ export type WriteZipOptions = {
   onBytes?: (n: number) => void
   onEntryError?: (e: ZipEntry, err: NodeJS.ErrnoException) => void
 }
-
-/** Errors opening an entry's file that skip the entry instead of failing the archive. */
-const SKIPPABLE = new Set(['ENOENT', 'EACCES', 'EPERM', 'EBUSY'])
 
 /**
  * Streams `entries` into a partial sibling of `rel`, verifies the entry count, then renames to `rel`.
@@ -52,7 +50,7 @@ export async function writeZip(
         fh = await open(e.absPath, 'r')
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code
-        if (code && SKIPPABLE.has(code)) {
+        if (code && FILE_LEVEL.has(code)) {
           opts.onEntryError?.(e, err as NodeJS.ErrnoException)
           continue
         }

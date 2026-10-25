@@ -383,3 +383,35 @@ describe('unreadable source entries never cost backup data', () => {
     }
   )
 })
+
+describe('per-file errors do not abort the job', () => {
+  test.each(['EINVAL', 'EILSEQ', 'ENAMETOOLONG', 'EISDIR', 'ENOTDIR', 'EEXIST', 'EIO'])(
+    'mirror-copy: %s on one file → warning, other files still backed up',
+    async (code) => {
+      const { source, root } = await setup({ 'a.txt': 'a', 'b.txt': 'b' })
+      const dest = new FailingDest(root, 1, code)
+      const r = await run(source, dest)
+      expect(r.status).toBe('completed-with-warnings')
+      expect(r.warnings).toEqual([expect.objectContaining({ path: 'a.txt', code })])
+      expect(await readTree(root)).toEqual({ 'S/current/b.txt': 'b' })
+    }
+  )
+
+  test('mirror-zip: an archive that cannot be written is skipped with a warning and retried next run', async () => {
+    const { source, root } = await setup({ 'A/x.txt': 'x', 'B/y.txt': 'y' })
+    source.packaging = 'zip-children'
+    let calls = 0
+    const dest = new (class extends FsDestination {
+      override async writeStream(rel: string): Promise<NodeJS.WritableStream> {
+        if (++calls === 1) throw Object.assign(new Error('EINVAL'), { code: 'EINVAL' })
+        return super.writeStream(rel)
+      }
+    })(root)
+    const r = await run(source, dest)
+    expect(r.status).toBe('completed-with-warnings')
+    expect(r.counts.zipped).toBe(1)
+    expect(r.warnings).toEqual([expect.objectContaining({ path: 'A.zip', code: 'EINVAL' })])
+    const r2 = await run(source, dest)
+    expect(r2.counts.zipped).toBe(1)
+  })
+})

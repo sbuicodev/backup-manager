@@ -214,24 +214,29 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
       for (const t of toWrite) {
         x.signal.throwIfAborted()
         let entryErrors = 0
-        await writeZip(
-          ctx.dest,
-          `${current}/${t.name}`,
-          t.files.map((f) => ({
-            absPath: join(ctx.source.path, ...f.rel.split('/')),
-            name: f.rel,
-            mtimeMs: f.mtimeMs
-          })),
-          ctx.source.zip.level,
-          {
-            signal: x.signal,
-            onBytes: (n) => run.progress(t.name, n),
-            onEntryError: (e, err) => {
-              entryErrors++
-              run.warn({ path: e.name, code: err.code ?? 'ERROR', message: err.message })
+        // An archive that cannot be written (e.g. a name the filesystem rejects) is skipped
+        // and left out of the manifest, so it is retried on the next run.
+        const written = await run.guard(t.name, () =>
+          writeZip(
+            ctx.dest,
+            `${current}/${t.name}`,
+            t.files.map((f) => ({
+              absPath: join(ctx.source.path, ...f.rel.split('/')),
+              name: f.rel,
+              mtimeMs: f.mtimeMs
+            })),
+            ctx.source.zip.level,
+            {
+              signal: x.signal,
+              onBytes: (n) => run.progress(t.name, n),
+              onEntryError: (e, err) => {
+                entryErrors++
+                run.warn({ path: e.name, code: err.code ?? 'ERROR', message: err.message })
+              }
             }
-          }
+          )
         )
+        if (!written) continue
         run.progress(t.name, 0, true)
         run.counts.zipped++
         // A skipped entry leaves the fingerprint unset so the archive is retried next run.

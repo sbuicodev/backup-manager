@@ -74,7 +74,7 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
           } else {
             for (const t of targets) {
               x.signal.throwIfAborted()
-              await zipTo(`${partialDir}/${t.name}`, t)
+              await run.guard(t.name, () => zipTo(`${partialDir}/${t.name}`, t))
             }
           }
           await dest.rename(partialDir, `${slug}/${name}`)
