@@ -17,6 +17,22 @@ import { writeZip } from './packaging/zip'
 
 const MTIME_TOLERANCE_MS = 2000
 
+/**
+ * A source with no files at all while its backup has some is far more likely an unmounted
+ * drive or disconnected share than a real mass deletion: never remove anything then.
+ */
+function looksUnmounted(ctx: JobContext, backupHasFiles: boolean): boolean {
+  return ctx.srcFiles.length === 0 && backupHasFiles
+}
+
+function warnEmptySource(run: JobRun): void {
+  run.warn({
+    path: '',
+    code: 'EMPTY_SOURCE',
+    message: 'the source folder is empty; nothing was removed from the backup'
+  })
+}
+
 /** True when `rel` is `p` or lies under it. */
 const isAtOrUnder = (rel: string, p: string): boolean => rel === p || rel.startsWith(`${p}/`)
 
@@ -92,7 +108,9 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
   const { slug } = ctx.source
   const current = `${slug}/current`
   const dst = await ctx.dest.walk(current, effectiveExcludes(ctx.source, ctx.globalExcludes))
+  const emptySource = looksUnmounted(ctx, dst.length > 0)
   const diff = diffMirror(ctx.srcFiles, dst, unreadableRels(ctx))
+  if (emptySource) diff.remove = []
   const plan = basePlan(ctx, 'mirror-copy')
   plan.counts = {
     ...plan.counts,
@@ -106,6 +124,7 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
   const execute = (x: ExecContext): ReturnType<PreparedJob['execute']> =>
     asJobAbort(ctx.dest, async () => {
       const run = new JobRun(ctx, x, plan.bytes)
+      if (emptySource) warnEmptySource(run)
       await ctx.dest.removePartials(slug, false)
       await ctx.dest.removePartials(current, true)
       await ctx.dest.mkdirp(current)
@@ -170,9 +189,13 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
       t.files.some((f) => unreadableTops.has(f.rel.split('/')[0])) ||
       (unreadableTopLevel && isBundleTarget(t)))
   const keptByUnreadable = targets.filter(coversUnreadable)
+  const existingZips = (await ctx.dest.list(current)).filter(
+    (e) => !e.isDir && e.name.endsWith('.zip')
+  )
+  const emptySource = looksUnmounted(ctx, existingZips.length > 0)
   const toWrite: ZipTarget[] = []
   for (const t of targets) {
-    if (keptByUnreadable.includes(t)) continue
+    if (emptySource || keptByUnreadable.includes(t)) continue
     const exists = (await ctx.dest.stat(`${current}/${t.name}`)) !== null
     if (!exists || manifest.archives[t.name] !== t.fingerprint) toWrite.push(t)
   }
@@ -182,10 +205,9 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
       ? unreadableTops.size > 0
       : unreadableTops.has(stemOf(name)) ||
         (isBundle && stemOf(name) === '_files' && unreadableTopLevel)
-  const stale = (await ctx.dest.list(current))
-    .filter((e) => !e.isDir && e.name.endsWith('.zip') && !names.has(e.name))
-    .map((e) => e.name)
-    .filter((name) => !protectsArchive(name))
+  const stale = emptySource
+    ? []
+    : existingZips.map((e) => e.name).filter((name) => !names.has(name) && !protectsArchive(name))
 
   const plan = basePlan(ctx, 'mirror-zip')
   plan.counts = {
@@ -202,7 +224,8 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
       await ctx.dest.removePartials(slug, false)
       await ctx.dest.removePartials(current, true)
       await ctx.dest.mkdirp(current)
-      const archives: Record<string, string> = {}
+      if (emptySource) warnEmptySource(run)
+      const archives: Record<string, string> = emptySource ? { ...manifest.archives } : {}
       for (const t of targets) {
         if (keptByUnreadable.includes(t)) {
           if (manifest.archives[t.name] !== undefined) archives[t.name] = manifest.archives[t.name]
@@ -211,7 +234,7 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
             code: 'KEPT',
             message: 'previous archive kept because some of its files could not be read'
           })
-        } else if (!toWrite.includes(t)) {
+        } else if (!emptySource && !toWrite.includes(t)) {
           archives[t.name] = t.fingerprint
         }
       }

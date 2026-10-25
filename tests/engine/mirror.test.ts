@@ -432,3 +432,40 @@ describe('names differing only by case', () => {
     expect(Object.keys(await readTree(root))).toHaveLength(1)
   })
 })
+
+describe('a source that suddenly looks empty', () => {
+  test('mirror-copy (exact) removes nothing and warns', async () => {
+    const { src, source, dest, root } = await setup({ 'a.txt': 'a', 'd/b.txt': 'b' })
+    source.mirror.deletion = 'exact'
+    await run(source, dest)
+    await rm(join(src, 'a.txt'))
+    await rm(join(src, 'd'), { recursive: true })
+    const r = await run(source, dest)
+    expect(r.counts.deleted).toBe(0)
+    expect(r.warnings).toEqual([expect.objectContaining({ code: 'EMPTY_SOURCE' })])
+    expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'a', 'S/current/d/b.txt': 'b' })
+  })
+
+  test('mirror-zip (exact) keeps its archives and warns', async () => {
+    const { src, source, dest, root } = await setup({ 'A/x.txt': 'x' })
+    source.packaging = 'zip-children'
+    source.mirror.deletion = 'exact'
+    await run(source, dest)
+    await rm(join(src, 'A'), { recursive: true })
+    const r = await run(source, dest)
+    expect(r.counts.deleted).toBe(0)
+    expect(r.warnings).toEqual([expect.objectContaining({ code: 'EMPTY_SOURCE' })])
+    expect(Object.keys(await readTree(root))).toContain('S/current/A.zip')
+  })
+
+  test('mirror zip-whole does not replace the archive with an empty one', async () => {
+    const { src, source, dest, root } = await setup({ 'A/x.txt': 'x' })
+    source.packaging = 'zip-whole'
+    await run(source, dest)
+    const before = await readFile(join(root, 'S/current/S.zip'))
+    await rm(join(src, 'A'), { recursive: true })
+    const r = await run(source, dest)
+    expect(r.counts.zipped).toBe(0)
+    expect((await readFile(join(root, 'S/current/S.zip'))).equals(before)).toBe(true)
+  })
+})
