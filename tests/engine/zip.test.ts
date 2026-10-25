@@ -1,4 +1,5 @@
-import { writeFile } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import yauzl from 'yauzl'
@@ -125,3 +126,42 @@ test('abort mid-write rejects and leaves no partial or target', async () => {
   ).rejects.toMatchObject({ name: 'AbortError' })
   expect(await readTree(root)).toEqual({})
 })
+
+test('several multi-chunk files at level 6 keep their full contents', async () => {
+  const src = await tmpDir()
+  const root = await tmpDir()
+  const entries: ZipEntry[] = []
+  for (let i = 0; i < 5; i++) {
+    const p = join(src, `f${i}.bin`)
+    await writeFile(p, randomBytes(200_000 + i * 1000))
+    entries.push({ absPath: p, name: `f${i}.bin`, mtimeMs: Date.now() })
+  }
+  await writeZip(new FsDestination(root), 'x.zip', entries, 6, {})
+  const read = await readZipBuffers(join(root, 'x.zip'))
+  for (const e of entries) {
+    expect(read[e.name]?.equals(await readFile(e.absPath)), e.name).toBe(true)
+  }
+})
+
+function readZipBuffers(file: string): Promise<Record<string, Buffer>> {
+  return new Promise((resolve, reject) => {
+    yauzl.open(file, { lazyEntries: true }, (err, zf) => {
+      if (err || !zf) return reject(err)
+      const out: Record<string, Buffer> = {}
+      zf.on('entry', (e: yauzl.Entry) => {
+        zf.openReadStream(e, (err2, rs) => {
+          if (err2 || !rs) return reject(err2)
+          const chunks: Buffer[] = []
+          rs.on('data', (c: Buffer) => chunks.push(c))
+          rs.on('end', () => {
+            out[e.fileName] = Buffer.concat(chunks)
+            zf.readEntry()
+          })
+        })
+      })
+      zf.on('end', () => resolve(out))
+      zf.on('error', reject)
+      zf.readEntry()
+    })
+  })
+}

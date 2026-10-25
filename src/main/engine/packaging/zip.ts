@@ -1,6 +1,6 @@
 import { once } from 'node:events'
 import { open } from 'node:fs/promises'
-import type { Readable } from 'node:stream'
+import { Transform, type Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import yazl from 'yazl'
 import type { Destination } from '../destination'
@@ -58,17 +58,29 @@ export async function writeZip(
         throw err
       }
       const rs = fh.createReadStream()
-      rs.on('data', (c) => {
-        bytes += c.length
-        opts.onBytes?.(c.length)
+      // Count bytes in a pass-through that yazl reads from. Listening for 'data' on `rs`
+      // itself would start it flowing before yazl pipes it, and the entry would end up empty.
+      const counter = new Transform({
+        transform(chunk: Buffer, _enc, cb) {
+          bytes += chunk.length
+          opts.onBytes?.(chunk.length)
+          cb(null, chunk)
+        }
       })
-      const consumed = once(rs, 'close')
-      zip.addReadStream(rs, e.name, { mtime: new Date(e.mtimeMs), compressionLevel: level })
+      rs.on('error', (err) => counter.destroy(err))
+      rs.pipe(counter)
+      // 'end' fires only once yazl has consumed every byte of this entry.
+      const consumed = once(counter, 'end')
+      zip.addReadStream(counter, e.name, {
+        mtime: new Date(e.mtimeMs),
+        compressionLevel: level
+      })
       entryCount++
       try {
         await Promise.race([consumed, failed])
       } catch (err) {
         rs.destroy()
+        counter.destroy()
         throw err
       }
     }
