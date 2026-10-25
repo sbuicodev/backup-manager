@@ -84,7 +84,7 @@ export async function writeZip(
     await dest.rename(partialRel, rel)
     return { bytes, entryCount }
   } catch (err) {
-    (zip.outputStream as unknown as Readable).destroy()
+    ;(zip.outputStream as unknown as Readable).destroy()
     await written.catch(() => {})
     await dest.remove(partialRel)
     throw err
