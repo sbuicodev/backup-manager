@@ -1,0 +1,86 @@
+import { describe, expect, test } from 'vitest'
+import { defaultConfig, newDestination, newSource, type Settings } from '@shared/schema'
+import type { RunStatus, SchedulerStatus } from '@shared/types'
+import { linuxAutostartEntry, shouldNotify, trayStatusLine } from '../../src/main/os-helpers'
+
+const now = new Date(2026, 9, 26, 10, 0) // Monday
+function cfg(): ReturnType<typeof defaultConfig> {
+  const c = defaultConfig()
+  c.sources.push(
+    { ...newSource('/a', 'Documents', []), id: 's1' },
+    { ...newSource('/b', 'Photos', ['Documents']), id: 's2' }
+  )
+  c.destinations.push({ ...newDestination('/n', 'NAS'), id: 'd1' })
+  return c
+}
+const idle = (over: Partial<SchedulerStatus> = {}): SchedulerStatus => ({
+  active: null,
+  pending: [],
+  pausedUntil: null,
+  nextRuns: [],
+  pendingRetries: [],
+  ...over
+})
+
+describe('trayStatusLine', () => {
+  test('running with a current job', () => {
+    const st = idle({
+      active: { id: 'r', trigger: 'manual', jobs: [{ sourceId: 's2', destId: 'd1' }] }
+    })
+    expect(trayStatusLine(st, cfg(), now, { sourceId: 's2', destId: 'd1' })).toBe(
+      'Running: Photos → NAS'
+    )
+    expect(trayStatusLine(st, cfg(), now, null)).toBe('Running…')
+  })
+  test('paused', () => {
+    expect(trayStatusLine(idle({ pausedUntil: 'forever' }), cfg(), now)).toBe('Paused')
+    expect(
+      trayStatusLine(idle({ pausedUntil: new Date(2026, 9, 26, 15, 30).toISOString() }), cfg(), now)
+    ).toBe('Paused until 15:30')
+    expect(
+      trayStatusLine(idle({ pausedUntil: new Date(2026, 9, 27, 9, 5).toISOString() }), cfg(), now)
+    ).toBe('Paused until Tue 09:05')
+  })
+  test('idle with next run today, later this week, or none', () => {
+    const today = idle({
+      nextRuns: [
+        { sourceId: 's2', at: new Date(2026, 9, 27, 2).toISOString() },
+        { sourceId: 's1', at: new Date(2026, 9, 26, 14).toISOString() }
+      ]
+    })
+    expect(trayStatusLine(today, cfg(), now)).toBe('Idle · next: Documents at 14:00')
+    const later = idle({
+      nextRuns: [{ sourceId: 's2', at: new Date(2026, 9, 27, 2).toISOString() }]
+    })
+    expect(trayStatusLine(later, cfg(), now)).toBe('Idle · next: Photos at Tue 02:00')
+    expect(trayStatusLine(idle({ nextRuns: [{ sourceId: 's1', at: null }] }), cfg(), now)).toBe(
+      'Idle · no schedules'
+    )
+  })
+})
+
+describe('shouldNotify', () => {
+  const table: [Settings['notifications'], RunStatus, boolean][] = [
+    ['problems', 'completed', false],
+    ['problems', 'completed-with-warnings', true],
+    ['problems', 'failed', true],
+    ['problems', 'cancelled', false],
+    ['always', 'completed', true],
+    ['always', 'completed-with-warnings', true],
+    ['always', 'failed', true],
+    ['always', 'cancelled', true],
+    ['never', 'completed', false],
+    ['never', 'completed-with-warnings', false],
+    ['never', 'failed', false],
+    ['never', 'cancelled', false]
+  ]
+  test.each(table)('%s + %s → %s', (setting, status, expected) => {
+    expect(shouldNotify(setting, status)).toBe(expected)
+  })
+})
+
+test('linuxAutostartEntry', () => {
+  expect(linuxAutostartEntry('/opt/Backup Manager/backup-manager')).toBe(
+    '[Desktop Entry]\nType=Application\nName=Backup Manager\nExec="/opt/Backup Manager/backup-manager" --hidden\nX-GNOME-Autostart-enabled=true\n'
+  )
+})
