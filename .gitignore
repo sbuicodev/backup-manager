@@ -1,5 +1,11 @@
-.DS_Store
-node_modules/
-out/
-dist/
 *.log
+*.log*
+.DS_Store
+.eslintcache
+.superpowers/
+dist
+dist/
+node_modules
+node_modules/
+out
+out/
