@@ -1,18 +1,31 @@
-appId: com.electron.app
-productName: bm-tmp
+appId: com.stefano.backupmanager
+productName: Backup Manager
 directories:
   buildResources: build
 files:
   - '!**/.vscode/*'
   - '!src/*'
+  - '!tests/*'
+  - '!docs/*'
+  - '!.superpowers/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!vitest.config.{js,ts,mjs,mts}'
+  - '!components.json'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+# Tray icons are loaded from process.resourcesPath when packaged.
+extraResources:
+  - from: resources
+    to: .
+    filter:
+      - tray*.png
 win:
-  executableName: bm-tmp
+  executableName: backup-manager
+  target:
+    - nsis
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
@@ -20,24 +33,18 @@ nsis:
   createDesktopShortcut: always
 mac:
   entitlementsInherit: build/entitlements.mac.plist
-  extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+  category: public.app-category.utilities
+  target:
+    - dmg
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
   target:
     - AppImage
-    - snap
     - deb
-  maintainer: electronjs.org
+  maintainer: Stefano
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates

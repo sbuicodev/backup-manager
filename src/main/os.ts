@@ -7,7 +7,8 @@ import type { RunLog } from '@shared/types'
 import { linuxAutostartEntry, shouldNotify } from './os-helpers'
 
 export async function setLaunchAtLogin(enabled: boolean): Promise<void> {
-  if (!app.isPackaged) return // never register the dev binary as a login item
+  // Never register a dev binary or a throwaway test profile as a login item.
+  if (!app.isPackaged || process.env.BM_USER_DATA) return
   if (process.platform === 'linux') {
     const dir = join(homedir(), '.config', 'autostart')
     const file = join(dir, 'backup-manager.desktop')
