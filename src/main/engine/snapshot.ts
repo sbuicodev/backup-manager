@@ -1,7 +1,15 @@
 import { join } from 'node:path'
 import type { JobPlan } from '@shared/types'
 import { PARTIAL_SUFFIX } from './fsutil'
-import { JobRun, asJobAbort, type ExecContext, type JobContext, type PreparedJob } from './job'
+import {
+  JobRun,
+  asJobAbort,
+  caseConflicts,
+  warnCaseConflict,
+  type ExecContext,
+  type JobContext,
+  type PreparedJob
+} from './job'
 import { formatTimestamp, uniqueTimestampName } from './naming'
 import { computeZipTargets, type ZipTarget } from './packaging/targets'
 import { writeZip } from './packaging/zip'
@@ -60,7 +68,12 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
         } else {
           await dest.mkdirp(partialDir)
           if (isCopy) {
+            const conflicts = await caseConflicts(dest, partialDir, ctx.srcFiles)
             for (const f of ctx.srcFiles) {
+              if (conflicts.has(f.rel)) {
+                warnCaseConflict(run, f.rel)
+                continue
+              }
               const ok = await run.guard(f.rel, () =>
                 dest.copyFileIn(absOf(f.rel), `${partialDir}/${f.rel}`, x.signal, (n) =>
                   run.progress(f.rel, n)

@@ -113,3 +113,48 @@ export async function asJobAbort<T>(dest: Destination, fn: () => Promise<T>): Pr
     throw new JobAbort(kind === 'file' ? 'error' : kind, (err as Error).message)
   }
 }
+
+/** Rels that collide, ignoring case, with an earlier rel in the (sorted) list. */
+export function caseDuplicates(files: FileEntry[]): Set<string> {
+  const seen = new Set<string>()
+  const dups = new Set<string>()
+  for (const f of files) {
+    const key = f.rel.toLowerCase()
+    if (seen.has(key)) dups.add(f.rel)
+    seen.add(key)
+  }
+  return dups
+}
+
+/** Probes whether the existing directory `rel` resolves under a different letter case. */
+export async function isCaseInsensitive(dest: Destination, rel: string): Promise<boolean> {
+  const slash = rel.lastIndexOf('/')
+  const last = rel.slice(slash + 1)
+  const flipped = [...last]
+    .map((c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()))
+    .join('')
+  if (flipped === last) return false
+  return (await dest.stat(rel.slice(0, slash + 1) + flipped)) !== null
+}
+
+/**
+ * Files to skip because they differ only by case from an earlier file and `dir` is on a
+ * case-insensitive filesystem (copying both would silently overwrite one with the other).
+ */
+export async function caseConflicts(
+  dest: Destination,
+  dir: string,
+  files: FileEntry[]
+): Promise<Set<string>> {
+  const dups = caseDuplicates(files)
+  if (dups.size === 0 || !(await isCaseInsensitive(dest, dir))) return new Set()
+  return dups
+}
+
+export function warnCaseConflict(run: JobRun, rel: string): void {
+  run.warn({
+    path: rel,
+    code: 'CASE_CONFLICT',
+    message: 'skipped: another file differs only by letter case and the destination ignores case'
+  })
+}

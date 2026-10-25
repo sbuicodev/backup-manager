@@ -415,3 +415,20 @@ describe('per-file errors do not abort the job', () => {
     expect(r2.counts.zipped).toBe(1)
   })
 })
+
+describe('names differing only by case', () => {
+  test('on a case-insensitive destination the later duplicate is skipped with a warning', async (t) => {
+    const { src, source, dest, root } = await setup({ 'a.txt': 'lower' })
+    const { existsSync } = await import('node:fs')
+    if (!existsSync(join(src, 'A.txt'))) t.skip() // needs a case-insensitive filesystem
+    const ctx = await ctxFor(source, dest)
+    ctx.srcFiles = [
+      { rel: 'A.txt', size: 5, mtimeMs: ctx.srcFiles[0].mtimeMs },
+      { rel: 'a.txt', size: 5, mtimeMs: ctx.srcFiles[0].mtimeMs }
+    ]
+    const r = await (await prepareMirrorCopy(ctx)).execute(exec())
+    expect(r.counts.copied).toBe(1)
+    expect(r.warnings).toEqual([expect.objectContaining({ path: 'a.txt', code: 'CASE_CONFLICT' })])
+    expect(Object.keys(await readTree(root))).toHaveLength(1)
+  })
+})

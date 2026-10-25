@@ -4,6 +4,8 @@ import { MANIFEST_NAME } from './destination'
 import {
   JobRun,
   asJobAbort,
+  caseConflicts,
+  warnCaseConflict,
   effectiveExcludes,
   type ExecContext,
   type JobContext,
@@ -111,7 +113,9 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
       // have its freshly copied file trashed afterwards.
       for (const rel of diff.remove) await removeByPolicy(ctx, run, rel)
       if (ctx.source.mirror.deletion !== 'never') await ctx.dest.removeEmptyDirs(current)
+      const conflicts = await caseConflicts(ctx.dest, current, ctx.srcFiles)
       const copyOne = async (f: FileEntry, isUpdate: boolean): Promise<void> => {
+        if (conflicts.has(f.rel)) return warnCaseConflict(run, f.rel)
         const ok = await run.guard(f.rel, () =>
           ctx.dest.copyFileIn(
             join(ctx.source.path, ...f.rel.split('/')),
