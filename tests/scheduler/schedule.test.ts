@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import type { Schedule } from '@shared/schema'
 import { clampLast, isDue, latestSlot, nextRunAt } from '../../src/main/scheduler/schedule'
 
 const H = 3_600_000
@@ -26,7 +27,7 @@ test('daily: before today’s time → yesterday’s slot; after → today’s',
 })
 
 test('weekly on mon,thu at 09:00 from a Sunday → previous Thursday', () => {
-  const s = { kind: 'weekly', days: ['mon', 'thu'], time: '09:00' } as const
+  const s: Schedule = { kind: 'weekly', days: ['mon', 'thu'], time: '09:00' }
   // 2026-10-25 is a Sunday
   expect(latestSlot(s, at(2026, 10, 25, 12))).toEqual(at(2026, 10, 22, 9))
   expect(latestSlot(s, at(2026, 10, 26, 8))).toEqual(at(2026, 10, 22, 9))
