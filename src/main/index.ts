@@ -80,6 +80,9 @@ function onProgress(e: ProgressEvent): void {
   if (e.type === 'run-end') currentJob = null
 }
 
+// Lets a dev/test run use a throwaway profile instead of the real one.
+if (process.env.BM_USER_DATA) app.setPath('userData', process.env.BM_USER_DATA)
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
