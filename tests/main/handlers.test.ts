@@ -13,7 +13,7 @@ async function setup(): Promise<{
   handlers: ReturnType<typeof createHandlers>
   broadcasts: [string, unknown][]
   files: { save: string | null; open: string | null }
-  stop: () => void
+  stop: () => Promise<void>
 }> {
   const base = await tmpDir()
   await makeTree(base, { 'src/a.txt': 'a', 'dest/': '', 'user/': '' })
@@ -31,7 +31,17 @@ async function setup(): Promise<{
     saveFile: async () => files.save,
     openFile: async () => files.open
   })
-  return { base, handlers, broadcasts, files, stop: () => services.stop() }
+  return {
+    base,
+    handlers,
+    broadcasts,
+    files,
+    // Let pending state writes finish before the temp dir is removed.
+    stop: async () => {
+      await services.scheduler.whenIdle()
+      services.stop()
+    }
+  }
 }
 
 function validConfig(base: string): ReturnType<typeof defaultConfig> {
@@ -48,7 +58,7 @@ test('config:get returns defaults and the config path on first launch', async ()
     config: defaultConfig(),
     path: join(base, 'user', 'config.json')
   })
-  stop()
+  await stop()
 })
 
 test('config:save with an invalid config returns errors and leaves the file unchanged', async () => {
@@ -58,7 +68,7 @@ test('config:save with an invalid config returns errors and leaves the file unch
   const bad = { ...defaultConfig(), version: 5 }
   expect(await handlers[CH.configSave](bad)).toMatchObject({ ok: false })
   expect(await readFile(file, 'utf8')).toBe(before)
-  stop()
+  await stop()
 })
 
 test('config:save persists, config:get reflects it, and the change is broadcast', async () => {
@@ -70,7 +80,7 @@ test('config:save persists, config:get reflects it, and the change is broadcast'
     ok: true,
     config: cfg
   })
-  stop()
+  await stop()
 })
 
 test('invalid argument types throw "invalid arguments"', async () => {
@@ -78,7 +88,7 @@ test('invalid argument types throw "invalid arguments"', async () => {
   await expect(handlers[CH.runPlan]([123])).rejects.toThrow('invalid arguments')
   await expect(handlers[CH.historyGet](42)).rejects.toThrow('invalid arguments')
   await expect(handlers[CH.schedulerPause]('tomorrow')).rejects.toThrow('invalid arguments')
-  stop()
+  await stop()
 })
 
 test('run:plan returns a plan for the configured sources', async () => {
@@ -87,7 +97,7 @@ test('run:plan returns a plan for the configured sources', async () => {
   const plan = (await handlers[CH.runPlan]()) as { jobs: { counts: { copy: number } }[] }
   expect(plan.jobs).toHaveLength(1)
   expect(plan.jobs[0].counts.copy).toBe(1)
-  stop()
+  await stop()
 })
 
 test('run:start enqueues a run, broadcasts progress, and history records it', async () => {
@@ -109,7 +119,7 @@ test('run:start enqueues a run, broadcasts progress, and history records it', as
   const list = (await handlers[CH.historyList]()) as { id: string }[]
   expect(list.map((r) => r.id)).toEqual([id])
   expect(await handlers[CH.historyGet](id)).toMatchObject({ id, status: 'completed' })
-  stop()
+  await stop()
 })
 
 test('config:import of a valid file replaces config; invalid keeps current', async () => {
@@ -128,7 +138,7 @@ test('config:import of a valid file replaces config; invalid keeps current', asy
   ).toHaveLength(1)
   files.open = null
   expect(await handlers[CH.configImport]()).toBeNull()
-  stop()
+  await stop()
 })
 
 test('config:export writes the current config to the chosen file', async () => {
@@ -138,7 +148,7 @@ test('config:export writes the current config to the chosen file', async () => {
   expect(JSON.parse(await readFile(files.save, 'utf8'))).toEqual(defaultConfig())
   files.save = null
   expect(await handlers[CH.configExport]()).toBe(false)
-  stop()
+  await stop()
 })
 
 test('scheduler:pause forever shows in status; resume clears it', async () => {
@@ -147,7 +157,7 @@ test('scheduler:pause forever shows in status; resume clears it', async () => {
   expect(((await handlers[CH.schedulerStatus]()) as SchedulerStatus).pausedUntil).toBe('forever')
   await handlers[CH.schedulerResume]()
   expect(((await handlers[CH.schedulerStatus]()) as SchedulerStatus).pausedUntil).toBeNull()
-  stop()
+  await stop()
 })
 
 test('destinations:availability and dialog:pickFolder', async () => {
@@ -160,7 +170,7 @@ test('destinations:availability and dialog:pickFolder', async () => {
     [cfg.destinations[1].id]: false
   })
   expect(await handlers[CH.pickFolder]()).toBe('/picked')
-  stop()
+  await stop()
 })
 
 test('invalid config file on disk → config:get reports errors; reset restores defaults', async () => {
