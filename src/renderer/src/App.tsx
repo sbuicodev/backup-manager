@@ -25,7 +25,10 @@ import { useNow, useSchedulerStatus } from '@/hooks/useSchedulerStatus'
 import { api } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useRunProgress } from '@/hooks/useRunProgress'
 import { Destinations } from '@/screens/Destinations'
+import { History } from '@/screens/History'
+import { Run } from '@/screens/Run'
 import { Settings } from '@/screens/Settings'
 import { Sources } from '@/screens/Sources'
 
@@ -141,6 +144,7 @@ function ConfigError({
 function App(): React.JSX.Element {
   const cfg = useConfig()
   const status = useSchedulerStatus()
+  const progress = useRunProgress()
   const [screen, setScreen] = useState<Screen>('sources')
   const [screenArg, setScreenArg] = useState<string | undefined>()
 
@@ -191,10 +195,13 @@ function App(): React.JSX.Element {
             {screen === 'destinations' && <Destinations cfg={cfg} config={config} />}
             {screen === 'settings' && <Settings cfg={cfg} config={config} path={cfg.state.path} />}
             {screen === 'sources' && <Sources cfg={cfg} config={config} status={status} />}
-            {(screen === 'run' || screen === 'history') && (
-              <div className="text-muted-foreground text-sm">
-                {screen} {screenArg}
-              </div>
+            {screen === 'run' && <Run config={config} status={status} progress={progress} />}
+            {screen === 'history' && (
+              <History
+                config={config}
+                openId={screenArg}
+                refreshKey={progress.lastLog?.id ?? null}
+              />
             )}
           </div>
         </main>
