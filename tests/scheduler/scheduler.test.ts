@@ -76,11 +76,11 @@ async function harness(
       const jobs: JobResult[] = run.jobs.map((j) => ({
         sourceId: j.sourceId,
         destId: j.destId,
-        status: 'completed',
+        status: outcomes[`${j.sourceId}:${j.destId}`]?.status ?? 'completed',
+        reason: outcomes[`${j.sourceId}:${j.destId}`]?.reason,
         counts: { copied: 0, updated: 0, zipped: 0, trashed: 0, deleted: 0, pruned: 0, skipped: 0 },
         bytesWritten: 0,
-        warnings: [],
-        ...outcomes[`${j.sourceId}:${j.destId}`]
+        warnings: []
       }))
       for (const r of jobs) onJobEnd(r)
       return {
