@@ -15,9 +15,22 @@ import { writeZip } from './packaging/zip'
 
 const MTIME_TOLERANCE_MS = 2000
 
+/** True when `rel` is `p` or lies under it. */
+const isAtOrUnder = (rel: string, p: string): boolean => rel === p || rel.startsWith(`${p}/`)
+
+/** Source paths the walk could not read: their backups must never be removed or replaced. */
+function unreadableRels(ctx: JobContext): string[] {
+  return ctx.srcSkipped.filter((s) => s.reason === 'unreadable').map((s) => s.rel)
+}
+
+/**
+ * `protectedRels` are source paths that could not be read; destination files at or under
+ * them are never scheduled for removal, since their absence from the walk proves nothing.
+ */
 export function diffMirror(
   src: FileEntry[],
-  dst: FileEntry[]
+  dst: FileEntry[],
+  protectedRels: string[] = []
 ): { copy: FileEntry[]; update: FileEntry[]; remove: string[]; unchanged: number } {
   const existing = new Map(dst.map((f) => [f.rel, f]))
   const copy: FileEntry[] = []
@@ -31,7 +44,10 @@ export function diffMirror(
       update.push(f)
     else unchanged++
   }
-  return { copy, update, remove: [...existing.keys()], unchanged }
+  const remove = [...existing.keys()].filter(
+    (rel) => !protectedRels.some((p) => isAtOrUnder(rel, p))
+  )
+  return { copy, update, remove, unchanged }
 }
 
 function basePlan(ctx: JobContext, kind: JobPlan['kind']): JobPlan {
@@ -74,7 +90,7 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
   const { slug } = ctx.source
   const current = `${slug}/current`
   const dst = await ctx.dest.walk(current, effectiveExcludes(ctx.source, ctx.globalExcludes))
-  const diff = diffMirror(ctx.srcFiles, dst)
+  const diff = diffMirror(ctx.srcFiles, dst, unreadableRels(ctx))
   const plan = basePlan(ctx, 'mirror-copy')
   plan.counts = {
     ...plan.counts,
@@ -134,15 +150,37 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
   const manifestRel = `${current}/${MANIFEST_NAME}`
   const targets = computeZipTargets(ctx.source, ctx.srcFiles)
   const manifest = await readManifest(ctx, manifestRel)
+  // Top-level names (or everything, for zip-whole) whose archive would be missing members
+  // because part of the source could not be read: keep the existing archive instead.
+  const unreadableTops = new Set(unreadableRels(ctx).map((r) => r.split('/')[0]))
+  const isBundle = ctx.source.zip.looseFiles === 'bundle'
+  const stemOf = (name: string): string => name.replace(/(-\d+)?\.zip$/, '')
+  const unreadableTopLevel = unreadableRels(ctx).some((r) => !r.includes('/'))
+  const isBundleTarget = (t: ZipTarget): boolean =>
+    isBundle && stemOf(t.name) === '_files' && t.files.every((f) => !f.rel.includes('/'))
+  // Conservative: an unreadable top-level entry may be a loose file, so the bundle is kept too.
+  const coversUnreadable = (t: ZipTarget): boolean =>
+    unreadableTops.size > 0 &&
+    (ctx.source.packaging === 'zip-whole' ||
+      t.files.some((f) => unreadableTops.has(f.rel.split('/')[0])) ||
+      (unreadableTopLevel && isBundleTarget(t)))
+  const keptByUnreadable = targets.filter(coversUnreadable)
   const toWrite: ZipTarget[] = []
   for (const t of targets) {
+    if (keptByUnreadable.includes(t)) continue
     const exists = (await ctx.dest.stat(`${current}/${t.name}`)) !== null
     if (!exists || manifest.archives[t.name] !== t.fingerprint) toWrite.push(t)
   }
   const names = new Set(targets.map((t) => t.name))
+  const protectsArchive = (name: string): boolean =>
+    ctx.source.packaging === 'zip-whole'
+      ? unreadableTops.size > 0
+      : unreadableTops.has(stemOf(name)) ||
+        (isBundle && stemOf(name) === '_files' && unreadableTopLevel)
   const stale = (await ctx.dest.list(current))
     .filter((e) => !e.isDir && e.name.endsWith('.zip') && !names.has(e.name))
     .map((e) => e.name)
+    .filter((name) => !protectsArchive(name))
 
   const plan = basePlan(ctx, 'mirror-zip')
   plan.counts = {
@@ -160,7 +198,16 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
       await ctx.dest.mkdirp(current)
       const archives: Record<string, string> = {}
       for (const t of targets) {
-        if (!toWrite.includes(t)) archives[t.name] = t.fingerprint
+        if (keptByUnreadable.includes(t)) {
+          if (manifest.archives[t.name] !== undefined) archives[t.name] = manifest.archives[t.name]
+          run.warn({
+            path: t.name,
+            code: 'KEPT',
+            message: 'previous archive kept because some of its files could not be read'
+          })
+        } else if (!toWrite.includes(t)) {
+          archives[t.name] = t.fingerprint
+        }
       }
       for (const t of toWrite) {
         x.signal.throwIfAborted()

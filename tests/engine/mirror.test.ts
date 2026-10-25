@@ -1,4 +1,4 @@
-import { rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { newSource, type Source } from '@shared/schema'
@@ -295,5 +295,57 @@ describe('mirror-zip', () => {
     await rm(join(root, 'S/current/S.zip'))
     const r = await run(source, dest)
     expect(r.counts.zipped).toBe(1)
+  })
+})
+
+describe('unreadable source entries never cost backup data', () => {
+  const posixNonRoot = process.platform === 'win32' || process.getuid?.() === 0 ? test.skip : test
+
+  for (const deletion of ['exact', 'trash'] as const) {
+    posixNonRoot(`mirror-copy (${deletion}): backup of an unreadable subfolder is kept`, async () => {
+      const { src, source, dest, root } = await setup({ 'a.txt': 'a', 'sub/keep.txt': 'k' })
+      source.mirror.deletion = deletion
+      await run(source, dest)
+      await chmod(join(src, 'sub'), 0o000)
+      try {
+        const r = await run(source, dest)
+        expect(r.counts.deleted + r.counts.trashed).toBe(0)
+        expect(r.warnings.map((w) => w.path)).toContain('sub')
+        expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'a', 'S/current/sub/keep.txt': 'k' })
+      } finally {
+        await chmod(join(src, 'sub'), 0o755)
+      }
+    })
+  }
+
+  posixNonRoot('mirror-zip keeps an archive whose members became unreadable', async () => {
+    const { src, source, dest, root } = await setup({ 'A/x.txt': 'x', 'A/sub/y.txt': 'y', 'B/z.txt': 'z' })
+    source.packaging = 'zip-children'
+    await run(source, dest)
+    const before = await readFile(join(root, 'S/current/A.zip'))
+    await chmod(join(src, 'A/sub'), 0o000)
+    try {
+      const r = await run(source, dest)
+      expect(r.counts.zipped).toBe(0)
+      expect(r.warnings.some((w) => w.path === 'A.zip')).toBe(true)
+      expect((await readFile(join(root, 'S/current/A.zip'))).equals(before)).toBe(true)
+    } finally {
+      await chmod(join(src, 'A/sub'), 0o755)
+    }
+  })
+
+  posixNonRoot('mirror-zip does not remove the archive of a wholly unreadable top-level folder', async () => {
+    const { src, source, dest, root } = await setup({ 'A/x.txt': 'x', 'B/z.txt': 'z' })
+    source.packaging = 'zip-children'
+    source.mirror.deletion = 'exact'
+    await run(source, dest)
+    await chmod(join(src, 'B'), 0o000)
+    try {
+      const r = await run(source, dest)
+      expect(r.counts.deleted).toBe(0)
+      expect(Object.keys(await readTree(root))).toContain('S/current/B.zip')
+    } finally {
+      await chmod(join(src, 'B'), 0o755)
+    }
   })
 })
