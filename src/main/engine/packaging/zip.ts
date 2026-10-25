@@ -1,5 +1,6 @@
 import { once } from 'node:events'
 import { open } from 'node:fs/promises'
+import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import yazl from 'yazl'
 import type { Destination } from '../destination'
@@ -83,7 +84,7 @@ export async function writeZip(
     await dest.rename(partialRel, rel)
     return { bytes, entryCount }
   } catch (err) {
-    zip.outputStream.destroy()
+    (zip.outputStream as unknown as Readable).destroy()
     await written.catch(() => {})
     await dest.remove(partialRel)
     throw err
