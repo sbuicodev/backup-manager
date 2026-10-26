@@ -110,3 +110,11 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* The top bar moves the window; its controls stay clickable. */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}

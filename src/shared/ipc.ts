@@ -44,7 +44,11 @@ export type Api = {
     get(id: string): Promise<RunLog | null>
     changes(runId: string, q: ChangeQuery): Promise<ChangePage>
   }
-  app: { onNavigate(cb: (screen: Screen, arg?: string) => void): () => void }
+  app: {
+    /** `process.platform` of the app: the top bar leaves room for the native window controls. */
+    platform: string
+    onNavigate(cb: (screen: Screen, arg?: string) => void): () => void
+  }
 }
 
 /** IPC channel names: invoke channels mirror Api methods; the last four are main → renderer events. */

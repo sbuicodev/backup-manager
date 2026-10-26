@@ -2,8 +2,11 @@ import { describe, expect, test } from 'vitest'
 import { defaultConfig, newDestination, newSource, type Settings } from '@shared/schema'
 import type { RunStatus, SchedulerStatus } from '@shared/types'
 import {
+  TOP_BAR_HEIGHT,
   linuxAutostartEntry,
   shouldNotify,
+  titleBarOptions,
+  titleBarOverlay,
   trayActions,
   trayStatusLine
 } from '../../src/main/os-helpers'
@@ -122,5 +125,29 @@ describe('trayActions', () => {
   })
   test('paused: resume instead of pause', () => {
     expect(trayActions({ ...idle, pausedUntil: 'forever' })).toEqual(['run-all', 'resume'])
+  })
+})
+
+describe('titleBarOptions', () => {
+  test('macOS: hidden inset title bar, traffic lights centred in the top bar', () => {
+    const o = titleBarOptions('darwin', false)
+    expect(o).toMatchObject({ titleBarStyle: 'hiddenInset' })
+    expect(o).not.toHaveProperty('titleBarOverlay')
+    expect(o.trafficLightPosition!.y * 2 + 12).toBeCloseTo(TOP_BAR_HEIGHT, -1)
+  })
+  test('Windows and Linux: hidden title bar with native controls in the top bar', () => {
+    for (const platform of ['win32', 'linux'] as const) {
+      expect(titleBarOptions(platform, false)).toEqual({
+        titleBarStyle: 'hidden',
+        titleBarOverlay: { color: '#fafafa', symbolColor: '#0a0a0a', height: TOP_BAR_HEIGHT }
+      })
+    }
+  })
+  test('overlay colours follow the dark theme', () => {
+    expect(titleBarOverlay(true)).toEqual({
+      color: '#171717',
+      symbolColor: '#fafafa',
+      height: TOP_BAR_HEIGHT
+    })
   })
 })

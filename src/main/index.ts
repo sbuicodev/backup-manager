@@ -1,5 +1,13 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, powerMonitor, powerSaveBlocker, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  nativeTheme,
+  powerMonitor,
+  powerSaveBlocker,
+  shell
+} from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { CH, type Screen } from '@shared/ipc'
 import type { JobRequest, ProgressEvent } from '@shared/types'
@@ -7,6 +15,7 @@ import icon from '../../resources/icon.png?asset'
 import { createHandlers } from './handlers'
 import { registerIpc } from './ipc'
 import { notifyRunFinished, setLaunchAtLogin, startedHidden } from './os'
+import { titleBarOptions, titleBarOverlay } from './os-helpers'
 import { createServices, type Services } from './services'
 import { createTray } from './tray'
 
@@ -43,6 +52,8 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'Backup Manager',
+    // The app draws its own top bar; the OS keeps its native window controls in it.
+    ...titleBarOptions(process.platform, nativeTheme.shouldUseDarkColors),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -148,6 +159,12 @@ if (!app.requestSingleInstanceLock()) {
         void setLaunchAtLogin(launchAtLogin)
       }
       tray?.refresh()
+    })
+
+    // Windows/Linux draw their window controls in our colours: keep them in step with the theme.
+    nativeTheme.on('updated', () => {
+      if (process.platform === 'darwin' || !mainWindow || mainWindow.isDestroyed()) return
+      mainWindow.setTitleBarOverlay(titleBarOverlay(nativeTheme.shouldUseDarkColors))
     })
 
     powerMonitor.on('resume', () => void svc.scheduler.onResume())

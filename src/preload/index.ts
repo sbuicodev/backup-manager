@@ -40,7 +40,7 @@ const api: Api = {
     get: (id) => invoke(CH.historyGet, id),
     changes: (runId, q) => invoke(CH.historyChanges, runId, q)
   },
-  app: { onNavigate: (cb) => subscribe(CH.navigate, cb) }
+  app: { platform: process.platform, onNavigate: (cb) => subscribe(CH.navigate, cb) }
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -59,3 +59,32 @@ export function linuxAutostartEntry(execPath: string): string {
     `Exec="${execPath}" --hidden\nX-GNOME-Autostart-enabled=true\n`
   )
 }
+
+/** Height of the app's own top bar, which replaces the OS title bar (px). */
+export const TOP_BAR_HEIGHT = 44
+
+type Overlay = { color: string; symbolColor: string; height: number }
+
+/** Colours of the native window controls drawn over the top bar (Windows/Linux), per theme. */
+export function titleBarOverlay(dark: boolean): Overlay {
+  // The top bar uses the sidebar colour; symbols use the foreground colour (main.css).
+  return dark
+    ? { color: '#171717', symbolColor: '#fafafa', height: TOP_BAR_HEIGHT }
+    : { color: '#fafafa', symbolColor: '#0a0a0a', height: TOP_BAR_HEIGHT }
+}
+
+/** BrowserWindow options that hide the OS title bar but keep the native window controls. */
+export function titleBarOptions(
+  platform: NodeJS.Platform,
+  dark: boolean
+): {
+  titleBarStyle: 'hidden' | 'hiddenInset'
+  trafficLightPosition?: { x: number; y: number }
+  titleBarOverlay?: Overlay
+} {
+  if (platform === 'darwin') {
+    // Traffic lights are 12 px tall: centre them vertically in the top bar.
+    return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 } }
+  }
+  return { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay(dark) }
+}
