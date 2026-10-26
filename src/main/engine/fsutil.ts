@@ -3,10 +3,15 @@ import { open, rename, rm } from 'node:fs/promises'
 
 /** Writes text to `file` via a temp file + fsync + rename, so readers never see a partial file. */
 export async function atomicWriteText(file: string, text: string): Promise<void> {
+  await atomicWriteBuffer(file, Buffer.from(text, 'utf8'))
+}
+
+/** Writes bytes to `file` via a temp file + fsync + rename. */
+export async function atomicWriteBuffer(file: string, data: Buffer): Promise<void> {
   const tmp = `${file}.tmp-${randomBytes(4).toString('hex')}`
   const fh = await open(tmp, 'w')
   try {
-    await fh.writeFile(text, 'utf8')
+    await fh.writeFile(data)
     await fh.sync()
   } finally {
     await fh.close()
