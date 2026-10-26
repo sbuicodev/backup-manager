@@ -1,6 +1,8 @@
-import { readdir } from 'node:fs/promises'
+import { readdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import type { RunLog } from '@shared/types'
+import { changeFileName } from '../../src/main/engine/changes'
 import { getRun, listRuns, newRunId, writeRunLog } from '../../src/main/engine/history'
 import { tmpDir } from '../helpers/fs'
 
@@ -49,4 +51,17 @@ test('history keeps the last 200 logs', async () => {
 test('newRunId dedupes', () => {
   const d = new Date(2026, 0, 1, 0, 0, 0)
   expect(newRunId(d, new Set(['2026-01-01_000000']))).toBe('2026-01-01_000000-2')
+})
+
+test('history retention also deletes change files', async () => {
+  const dir = await tmpDir()
+  for (let i = 0; i < 202; i++) {
+    const d = new Date(2026, 0, 1, 0, 0, i)
+    const id = newRunId(d, new Set())
+    await writeFile(join(dir, changeFileName(id)), 'x')
+    await writeRunLog(dir, log(id, d.toISOString()))
+  }
+  const files = await readdir(dir)
+  expect(files.filter((f) => f.endsWith('.changes.ndjson.gz'))).toHaveLength(200)
+  expect(files).not.toContain(changeFileName('2026-01-01_000000'))
 })

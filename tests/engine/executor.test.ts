@@ -5,6 +5,7 @@ import { defaultConfig, newDestination, newSource, type Config } from '@shared/s
 import type { ProgressEvent } from '@shared/types'
 import { FsDestination } from '../../src/main/engine/destination'
 import { runBackup } from '../../src/main/engine/executor'
+import { readChanges } from '../../src/main/engine/changes'
 import { listRuns } from '../../src/main/engine/history'
 import { makeTree, readTree, tmpDir } from '../helpers/fs'
 import { FailingDest } from '../helpers/job'
@@ -138,4 +139,30 @@ test('an error while preparing one job fails only that job; the rest run and his
   expect(log.jobs[0].error).toMatch(/EACCES/)
   expect(log.status).toBe('failed')
   expect((await listRuns(history)).map((r) => r.id)).toEqual(['run-1'])
+})
+
+test('a run records changes and sets changeCount per job', async () => {
+  const { cfg, history } = await world(3)
+  const log = await runBackup(cfg, {}, opts(history))
+  expect(log.jobs.map((j) => j.changeCount)).toEqual([3, 1])
+  const page = await readChanges(history, 'run-1', {
+    sourceId: cfg.sources[0].id,
+    destId: cfg.destinations[0].id
+  })
+  expect(page.items.map((i) => [i.action, i.path])).toEqual([
+    ['added', 'f0.txt'],
+    ['added', 'f1.txt'],
+    ['added', 'f2.txt']
+  ])
+})
+
+test('a job that fails part-way keeps the changes recorded before it failed', async () => {
+  const { cfg, history } = await world(3)
+  cfg.sources.pop()
+  const log = await runBackup(
+    cfg,
+    {},
+    opts(history, { makeDestination: (r) => new FailingDest(r, 3, 'ENOSPC') })
+  )
+  expect(log.jobs[0]).toMatchObject({ status: 'failed', reason: 'disk-full', changeCount: 2 })
 })

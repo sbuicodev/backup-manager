@@ -52,6 +52,8 @@ export type JobResult = {
   bytesWritten: number
   warnings: Warning[]
   error?: string
+  /** Change entries recorded for this job; absent in logs written before change history. */
+  changeCount?: number
 }
 export type RunLog = {
   id: string
@@ -78,3 +80,27 @@ export type SchedulerStatus = {
 }
 
 export type RunSummary = Omit<RunLog, 'jobs'> & { jobCount: number }
+
+export type ChangeAction = 'added' | 'updated' | 'removed' | 'trashed' | 'deleted' | 'skipped'
+export type ChangeEntry = {
+  sourceId: string
+  destId: string
+  action: ChangeAction
+  path: string
+  size?: number
+  archive?: string
+  code?: string
+}
+export type ChangeQuery = {
+  sourceId: string
+  destId: string
+  actions?: ChangeAction[]
+  search?: string
+  offset?: number
+  limit?: number
+}
+export type ChangePage = {
+  total: number
+  counts: Record<ChangeAction, number>
+  items: ChangeEntry[]
+}

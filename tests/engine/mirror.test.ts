@@ -2,7 +2,7 @@ import { chmod, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { newSource, type Source } from '@shared/schema'
-import type { FileEntry, JobResult, ProgressEvent } from '@shared/types'
+import type { ChangeEntry, FileEntry, JobResult, ProgressEvent } from '@shared/types'
 import { FsDestination } from '../../src/main/engine/destination'
 import { JobAbort } from '../../src/main/engine/errors'
 import type { ExecContext, JobContext } from '../../src/main/engine/job'
@@ -46,8 +46,13 @@ async function ctxFor(source: Source, dest: FsDestination): Promise<JobContext> 
   }
 }
 
-function exec(events: ProgressEvent[] = []): ExecContext {
-  return { runId: 'r1', signal: new AbortController().signal, emit: (e) => events.push(e) }
+function exec(events: ProgressEvent[] = [], changes: ChangeEntry[] = []): ExecContext {
+  return {
+    runId: 'r1',
+    signal: new AbortController().signal,
+    emit: (e) => events.push(e),
+    record: (c) => changes.push(c)
+  }
 }
 
 async function run(source: Source, dest: FsDestination, x = exec()): Promise<JobResult> {
@@ -467,5 +472,48 @@ describe('a source that suddenly looks empty', () => {
     const r = await run(source, dest)
     expect(r.counts.zipped).toBe(0)
     expect((await readFile(join(root, 'S/current/S.zip'))).equals(before)).toBe(true)
+  })
+})
+
+describe('change recording', () => {
+  test('mirror-copy records added, updated and trashed', async () => {
+    const { src, source, dest } = await setup({ 'a.txt': 'a', 'b.txt': 'b', 'c.txt': 'c' })
+    const first: ChangeEntry[] = []
+    await run(source, dest, exec([], first))
+    expect(first.map((c) => [c.action, c.path, c.size])).toEqual([
+      ['added', 'a.txt', 1],
+      ['added', 'b.txt', 1],
+      ['added', 'c.txt', 1]
+    ])
+    await writeFile(join(src, 'b.txt'), 'changed')
+    await rm(join(src, 'c.txt'))
+    const second: ChangeEntry[] = []
+    await run(source, dest, exec([], second))
+    expect(second.map((c) => [c.action, c.path])).toEqual([
+      ['trashed', 'c.txt'],
+      ['updated', 'b.txt']
+    ])
+    expect(second.every((c) => c.sourceId === source.id && c.destId === 'd1')).toBe(true)
+  })
+
+  test('exact policy records deleted', async () => {
+    const { src, source, dest } = await setup({ 'a.txt': 'a', 'c.txt': 'c' })
+    source.mirror.deletion = 'exact'
+    await run(source, dest)
+    await rm(join(src, 'c.txt'))
+    const changes: ChangeEntry[] = []
+    await run(source, dest, exec([], changes))
+    expect(changes.map((c) => [c.action, c.path])).toEqual([['deleted', 'c.txt']])
+  })
+
+  test('warnings with a path are recorded as skipped', async () => {
+    const { source, dest } = await setup({ 'a.txt': 'a' })
+    const ctx = await ctxFor(source, dest)
+    ctx.srcSkipped = [{ rel: 'link', reason: 'symlink' }]
+    const changes: ChangeEntry[] = []
+    await (await prepareMirrorCopy(ctx)).execute(exec([], changes))
+    expect(changes).toContainEqual(
+      expect.objectContaining({ action: 'skipped', path: 'link', code: 'SYMLINK' })
+    )
   })
 })

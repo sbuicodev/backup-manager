@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { RunLog, RunSummary } from '@shared/types'
+import { changeFileName } from './changes'
 import { atomicWriteText } from './fsutil'
 import { formatTimestamp, uniqueTimestampName } from './naming'
 
@@ -30,6 +31,7 @@ export async function writeRunLog(dir: string, log: RunLog): Promise<void> {
   const files = await logFiles(dir)
   for (const f of files.slice(0, Math.max(0, files.length - HISTORY_LIMIT))) {
     await rm(join(dir, f), { force: true })
+    await rm(join(dir, changeFileName(f.slice(0, -'.json'.length))), { force: true })
   }
 }
 

@@ -10,6 +10,7 @@ import type {
 } from '@shared/types'
 import { FsDestination, type Destination } from './destination'
 import { JobAbort } from './errors'
+import { ChangeRecorder } from './changes'
 import { writeRunLog } from './history'
 import { newCounts } from './job'
 import { planRun, type RunRequest } from './planner'
@@ -63,6 +64,8 @@ export async function runBackup(
   const startedAt = now()
   const { runId, emit, signal } = opts
   const results: JobResult[] = []
+  const recorder = await ChangeRecorder.open(opts.historyDir, runId)
+  const record = recorder.record.bind(recorder)
 
   let prepared: Awaited<ReturnType<typeof planRun>>['prepared'] = []
   try {
@@ -109,7 +112,7 @@ export async function runBackup(
     })
     let result: JobResult
     try {
-      result = await p.execute({ runId, signal, emit })
+      result = await p.execute({ runId, signal, emit, record })
       const source = config.sources.find((s) => s.id === plan.sourceId)
       const destCfg = config.destinations.find((d) => d.id === plan.destId)
       if (source && destCfg) {
@@ -132,9 +135,11 @@ export async function runBackup(
         error: (err as Error).message
       })
     }
+    result.changeCount = recorder.countFor(plan.sourceId, plan.destId)
     results.push(result)
     emit({ type: 'job-end', runId, result })
   }
+  await recorder.close()
 
   const log: RunLog = {
     id: runId,

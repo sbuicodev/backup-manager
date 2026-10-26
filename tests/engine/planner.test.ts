@@ -95,7 +95,12 @@ test('{ jobs } request returns exactly those pairs, ignoring unknown or disabled
 test('unchanged mirror plans zero bytes', async () => {
   const { cfg } = await world()
   for (const p of (await planRun(cfg, {})).prepared)
-    await p.execute?.({ runId: 'r', signal: new AbortController().signal, emit: () => {} })
+    await p.execute?.({
+      runId: 'r',
+      signal: new AbortController().signal,
+      emit: () => {},
+      record: () => {}
+    })
   const { plan } = await planRun(cfg, {})
   expect(plan.jobs[0]).toMatchObject({ counts: { unchanged: 1, copy: 0 }, bytes: 0 })
 })

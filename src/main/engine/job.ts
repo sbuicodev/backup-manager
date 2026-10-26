@@ -1,5 +1,7 @@
 import type { Source } from '@shared/schema'
 import type {
+  ChangeAction,
+  ChangeEntry,
   Counts,
   FileEntry,
   JobPlan,
@@ -20,7 +22,13 @@ export type JobContext = {
   srcSkipped: SkippedEntry[]
   now: Date
 }
-export type ExecContext = { runId: string; signal: AbortSignal; emit: (e: ProgressEvent) => void }
+export type ExecContext = {
+  runId: string
+  signal: AbortSignal
+  emit: (e: ProgressEvent) => void
+  /** Records one per-file change in the run's change history. */
+  record: (e: ChangeEntry) => void
+}
 export type PreparedJob = { plan: JobPlan; execute(x: ExecContext): Promise<JobResult> }
 
 export function effectiveExcludes(source: Source, globalExcludes: string[]): string[] {
@@ -58,6 +66,15 @@ export class JobRun {
     this.warnings.push(w)
     this.counts.skipped++
     this.x.emit({ type: 'warning', runId: this.x.runId, warning: w })
+    if (w.path !== '') this.change('skipped', w.path, { code: w.code })
+  }
+
+  change(
+    action: ChangeAction,
+    path: string,
+    extra: { size?: number; archive?: string; code?: string } = {}
+  ): void {
+    this.x.record({ sourceId: this.ctx.source.id, destId: this.ctx.destId, action, path, ...extra })
   }
 
   /** Accounts bytes; emits a progress event at most every MiB unless `force`. */

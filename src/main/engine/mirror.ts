@@ -101,6 +101,7 @@ async function removeByPolicy(ctx: JobContext, run: JobRun, rel: string): Promis
   if (done) {
     if (mirror.deletion === 'trash') run.counts.trashed++
     else run.counts.deleted++
+    run.change(mirror.deletion === 'trash' ? 'trashed' : 'deleted', rel)
   }
 }
 
@@ -147,6 +148,7 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
           run.progress(f.rel, 0, true)
           if (isUpdate) run.counts.updated++
           else run.counts.copied++
+          run.change(isUpdate ? 'updated' : 'added', f.rel, { size: f.size })
         }
       }
       for (const f of diff.copy) await copyOne(f, false)

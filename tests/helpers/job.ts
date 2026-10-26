@@ -1,5 +1,5 @@
 import type { Source } from '@shared/schema'
-import type { ProgressEvent } from '@shared/types'
+import type { ChangeEntry, ProgressEvent } from '@shared/types'
 import { FsDestination } from '../../src/main/engine/destination'
 import type { ExecContext, JobContext } from '../../src/main/engine/job'
 import { walkTree } from '../../src/main/engine/walk'
@@ -19,9 +19,10 @@ export async function ctxFor(source: Source, dest: FsDestination, now: Date): Pr
 
 export function exec(
   events: ProgressEvent[] = [],
-  signal = new AbortController().signal
+  signal = new AbortController().signal,
+  changes: ChangeEntry[] = []
 ): ExecContext {
-  return { runId: 'r1', signal, emit: (e) => events.push(e) }
+  return { runId: 'r1', signal, emit: (e) => events.push(e), record: (c) => changes.push(c) }
 }
 
 /** FsDestination whose Nth copyFileIn (or zip stream open) throws an errno error. */
