@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { ArrowLeft, History as HistoryIcon } from 'lucide-react'
+import { Fragment, useEffect, useState } from 'react'
+import { ArrowLeft, ChevronRight, History as HistoryIcon } from 'lucide-react'
 import type { Config } from '@shared/schema'
 import type { RunLog, RunSummary, SchedulerStatus } from '@shared/types'
+import { ChangeList } from '@/components/ChangeList'
 import { PageHeader } from '@/components/PageHeader'
 import { REASONS, StatusBadge, TriggerBadge } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
@@ -38,6 +39,13 @@ function RunDetail({
   const dest = (id: string): string =>
     config.destinations.find((d) => d.id === id)?.name ?? 'Removed destination'
   const warnings = log.jobs.flatMap((j) => j.warnings.map((w) => ({ ...w, job: j })))
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const toggle = (key: string): void => {
+    const next = new Set(open)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setOpen(next)
+  }
   return (
     <div className="grid gap-6">
       <div className="flex items-center gap-3">
@@ -52,6 +60,7 @@ function RunDetail({
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-8" />
             <TableHead>Source → destination</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Changes</TableHead>
@@ -70,29 +79,50 @@ function RunDetail({
               c.pruned && `${c.pruned} pruned`,
               c.skipped && `${c.skipped} skipped`
             ].filter(Boolean)
+            const key = `${j.sourceId}:${j.destId}`
+            const expandable = (j.changeCount ?? 0) > 0
             return (
-              <TableRow key={`${j.sourceId}:${j.destId}`}>
-                <TableCell>
-                  {source(j.sourceId)} → {dest(j.destId)}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={j.status} />
-                </TableCell>
-                <TableCell className="text-sm">
-                  {j.reason ? (
-                    <span className="text-muted-foreground">
-                      {REASONS[j.reason]}
-                      {j.error && ` (${j.error})`}
-                      {retryFor(status, j.sourceId, j.destId) && ' · retry pending'}
-                    </span>
-                  ) : (
-                    changes.join(' · ') || 'No changes'
-                  )}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatBytes(j.bytesWritten)}
-                </TableCell>
-              </TableRow>
+              <Fragment key={key}>
+                <TableRow
+                  className={expandable ? 'cursor-pointer' : undefined}
+                  onClick={() => expandable && toggle(key)}
+                >
+                  <TableCell>
+                    {expandable && (
+                      <ChevronRight
+                        className={`size-4 transition-transform ${open.has(key) ? 'rotate-90' : ''}`}
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {source(j.sourceId)} → {dest(j.destId)}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={j.status} />
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {j.reason ? (
+                      <span className="text-muted-foreground">
+                        {REASONS[j.reason]}
+                        {j.error && ` (${j.error})`}
+                        {retryFor(status, j.sourceId, j.destId) && ' · retry pending'}
+                      </span>
+                    ) : (
+                      changes.join(' · ') || 'No changes'
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatBytes(j.bytesWritten)}
+                  </TableCell>
+                </TableRow>
+                {open.has(key) && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={5} className="whitespace-normal">
+                      <ChangeList runId={log.id} sourceId={j.sourceId} destId={j.destId} />
+                    </TableCell>
+                  </TableRow>
+                )}
+              </Fragment>
             )
           })}
         </TableBody>

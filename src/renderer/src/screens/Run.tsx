@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Eye, Loader2, Play, Square } from 'lucide-react'
+import { ChevronRight, Eye, Loader2, Play, Square } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Config } from '@shared/schema'
 import type { JobPlan, Plan, SchedulerStatus } from '@shared/types'
+import { ChangeList } from '@/components/ChangeList'
 import { PageHeader } from '@/components/PageHeader'
 import { REASONS, StatusBadge, TriggerBadge } from '@/components/StatusBadge'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +22,7 @@ import {
 import type { RunProgress } from '@/hooks/useRunProgress'
 import { api } from '@/lib/api'
 import { formatBytes, formatDuration } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { jobOutcomeText, nextCheckIn, retryFor } from '@/lib/retry'
 import { useNow } from '@/hooks/useSchedulerStatus'
 
@@ -109,6 +111,13 @@ export function Run({
   progress: RunProgress
 }): React.JSX.Element {
   const now = useNow(15_000)
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const toggleOpen = (key: string): void => {
+    const next = new Set(open)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setOpen(next)
+  }
   const enabled = config.sources.filter((s) => s.enabled)
   const [selected, setSelected] = useState<Set<string>>(() => new Set(enabled.map((s) => s.id)))
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -249,22 +258,47 @@ export function Run({
           </CardHeader>
           <CardContent className="grid gap-1 text-sm">
             {log.jobs.map((j) => (
-              <div key={`${j.sourceId}:${j.destId}`} className="flex items-center gap-2">
-                <StatusBadge status={j.status} />
-                <span>
-                  {n.source(j.sourceId)} → {n.dest(j.destId)}
-                </span>
-                <span className="text-muted-foreground ml-auto text-xs">
-                  {j.reason
-                    ? (jobOutcomeText(
-                        j.reason,
-                        n.dest(j.destId),
-                        retryFor(status, j.sourceId, j.destId),
-                        now
-                      ) ?? REASONS[j.reason])
-                    : formatBytes(j.bytesWritten)}
-                  {j.warnings.length > 0 && ` · ${j.warnings.length} warnings`}
-                </span>
+              <div key={`${j.sourceId}:${j.destId}`}>
+                <div
+                  className={cn(
+                    'flex items-center gap-2',
+                    (j.changeCount ?? 0) > 0 && 'cursor-pointer'
+                  )}
+                  onClick={() =>
+                    (j.changeCount ?? 0) > 0 && toggleOpen(`${j.sourceId}:${j.destId}`)
+                  }
+                >
+                  {(j.changeCount ?? 0) > 0 ? (
+                    <ChevronRight
+                      className={cn(
+                        'size-4 transition-transform',
+                        open.has(`${j.sourceId}:${j.destId}`) && 'rotate-90'
+                      )}
+                    />
+                  ) : (
+                    <span className="size-4" />
+                  )}
+                  <StatusBadge status={j.status} />
+                  <span>
+                    {n.source(j.sourceId)} → {n.dest(j.destId)}
+                  </span>
+                  <span className="text-muted-foreground ml-auto text-xs">
+                    {j.reason
+                      ? (jobOutcomeText(
+                          j.reason,
+                          n.dest(j.destId),
+                          retryFor(status, j.sourceId, j.destId),
+                          now
+                        ) ?? REASONS[j.reason])
+                      : formatBytes(j.bytesWritten)}
+                    {j.warnings.length > 0 && ` · ${j.warnings.length} warnings`}
+                  </span>
+                </div>
+                {open.has(`${j.sourceId}:${j.destId}`) && (
+                  <div className="pl-6">
+                    <ChangeList runId={log.id} sourceId={j.sourceId} destId={j.destId} />
+                  </div>
+                )}
               </div>
             ))}
           </CardContent>
