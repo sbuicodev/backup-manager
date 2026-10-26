@@ -172,12 +172,101 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
         }
       }
 
+      // Archives whose new parts could not all be produced keep their previous state, and none
+      // of their old files are removed (C1/I7 in the review: never trade a good copy for none).
+      const failedBases = new Set<string>()
+      const keepPrevious = (w: ArchiveWork, why: string): void => {
+        failedBases.add(w.target.base)
+        if (!w.prev) return // nothing to keep; the failure itself was already warned about
+        archives[w.target.base] = w.prev
+        run.warn({ path: `${w.target.base}.zip`, code: 'KEPT', message: why })
+      }
+
       for (const w of work) {
         const { base } = w.target
         const prevFiles = new Map<string, { f: FileEntry; archive: string }>()
         for (const p of w.prev?.parts ?? []) {
           for (const f of p.files) prevFiles.set(f.rel, { f, archive: displayName(base, p) })
         }
+
+        // 1. Write every changed part to a temp file; nothing visible changes yet.
+        type Staged = { pw: PartWork; file: string; tempRel: string; entryErrors: number }
+        const staged: Staged[] = []
+        let failed: string | null = null
+        for (const pw of w.parts.filter((p) => p.write)) {
+          x.signal.throwIfAborted()
+          const file = partBaseName(base, pw.part)
+          let entryErrors = 0
+          const r = await run.guard(file, () =>
+            writeZip(
+              ctx.dest,
+              `${current}/${file}`,
+              pw.part.files.map((f) => ({
+                absPath: join(ctx.source.path, ...f.rel.split('/')),
+                name: f.rel,
+                mtimeMs: f.mtimeMs
+              })),
+              level,
+              {
+                signal: x.signal,
+                finalize: false,
+                onBytes: (n: number) => run.progress(file, n),
+                onEntryError: (e, err) => {
+                  entryErrors++
+                  run.warn({ path: e.name, code: err.code ?? 'ERROR', message: err.message })
+                }
+              }
+            )
+          )
+          if (!r) {
+            failed = 'previous archive kept because a part could not be written'
+            break
+          }
+          staged.push({ pw, file, tempRel: r.tempRel!, entryErrors })
+          if (entryErrors > 0 && w.prev) {
+            failed = 'previous archive kept because some of its files could not be read'
+            break
+          }
+        }
+        if (failed) {
+          for (const st of staged) await ctx.dest.remove(st.tempRel)
+          keepPrevious(w, failed)
+          continue
+        }
+
+        // 2. Commit: move each temp into place (or split it into pieces).
+        const committed = new Map<number, number>() // part n → pieces (0 when not chunked)
+        for (const [k, st] of staged.entries()) {
+          const pieces = await run.guard(st.file, async () => {
+            if (!st.pw.part.chunked) {
+              await ctx.dest.rename(st.tempRel, `${current}/${st.file}`)
+              return 0
+            }
+            const names = await splitIntoChunks(
+              ctx.dest,
+              st.tempRel,
+              `${current}/${st.file}`,
+              ctx.zip.chunkSize!,
+              x.signal
+            )
+            return names.length
+          })
+          if (pieces === undefined) {
+            for (const rest of staged.slice(k)) await ctx.dest.remove(rest.tempRel)
+            break
+          }
+          committed.set(st.pw.part.n, pieces)
+          run.progress(st.file, 0, true)
+          run.counts.zipped++
+        }
+        if (committed.size < staged.length) {
+          // Some parts already carry new content under their old names; the previous manifest
+          // entry no longer matches them, so the next run rewrites them from the source.
+          keepPrevious(w, 'previous archive kept because a part could not be written')
+          continue
+        }
+
+        // 3. Record the new state and what changed.
         const parts: ManifestPart[] = []
         for (const pw of w.parts) {
           const { part } = pw
@@ -185,51 +274,14 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
             parts.push({ ...pw.prev!, files: part.files, fingerprint: pw.fingerprint })
             continue
           }
-          x.signal.throwIfAborted()
-          const file = partBaseName(base, part)
-          let entryErrors = 0
-          const entries = part.files.map((f) => ({
-            absPath: join(ctx.source.path, ...f.rel.split('/')),
-            name: f.rel,
-            mtimeMs: f.mtimeMs
-          }))
-          const zipOpts = {
-            signal: x.signal,
-            onBytes: (n: number) => run.progress(file, n),
-            onEntryError: (e: { name: string }, err: NodeJS.ErrnoException) => {
-              entryErrors++
-              run.warn({ path: e.name, code: err.code ?? 'ERROR', message: err.message })
-            }
-          }
-          // An archive part that cannot be written is skipped and left out of the manifest,
-          // so it is retried on the next run.
-          const chunks = await run.guard(file, async () => {
-            if (!part.chunked) {
-              await writeZip(ctx.dest, `${current}/${file}`, entries, level, zipOpts)
-              return 0
-            }
-            const r = await writeZip(ctx.dest, `${current}/${file}`, entries, level, {
-              ...zipOpts,
-              finalize: false
-            })
-            const names = await splitIntoChunks(
-              ctx.dest,
-              r.tempRel!,
-              `${current}/${file}`,
-              ctx.zip.chunkSize!,
-              x.signal
-            )
-            return names.length
-          })
-          if (chunks === undefined) continue
-          run.progress(file, 0, true)
-          run.counts.zipped++
+          const st = staged.find((x) => x.pw === pw)!
+          const pieces = committed.get(part.n)!
           parts.push({
             n: part.n,
             chunked: part.chunked,
-            ...(part.chunked ? { chunks } : {}),
+            ...(part.chunked ? { chunks: pieces } : {}),
             // A skipped entry leaves the fingerprint unset so the part is retried next run.
-            fingerprint: entryErrors === 0 ? pw.fingerprint : '',
+            fingerprint: st.entryErrors === 0 ? pw.fingerprint : '',
             files: part.files
           })
           for (const f of part.files) {
@@ -257,7 +309,9 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
           }
         }
       }
-      for (const name of stale) await removeByPolicy(ctx, run, name, false)
+      for (const name of stale) {
+        if (!failedBases.has(baseOf(name))) await removeByPolicy(ctx, run, name, false)
+      }
       await ctx.dest.writeTextAtomic(
         manifestRel,
         JSON.stringify({ version: 2, archives } satisfies ManifestV2, null, 2)

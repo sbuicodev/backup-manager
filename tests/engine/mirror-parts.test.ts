@@ -288,3 +288,71 @@ describe('mirror zip parts', () => {
     ).toBeLessThan(MB)
   })
 })
+
+describe('a part that cannot be written never costs the previous archive', () => {
+  /** FsDestination whose renames onto `target` (a final archive name) fail with EACCES. */
+  const failingRenameTo = (root: string, target: string): FsDestination =>
+    new (class extends FsDestination {
+      override async rename(from: string, to: string): Promise<void> {
+        if (to.endsWith(`/${target}`)) throw Object.assign(new Error('EACCES'), { code: 'EACCES' })
+        return super.rename(from, to)
+      }
+    })(root)
+
+  const sha = async (file: string): Promise<string> =>
+    (await import('node:crypto')).createHash('sha1').update(await readFile(file)).digest('hex')
+
+  test('limit switched off but S.zip cannot be written: old parts and manifest stay', async () => {
+    const w = await world({ a: 400 * KB, b: 400 * KB, c: 400 * KB }, MB)
+    w.source.mirror.deletion = 'exact'
+    await run(w)
+    const before = await names(w.current)
+    const hashes = await Promise.all(before.map((n) => sha(join(w.current, n))))
+    const manifest = await readFile(join(w.current, MANIFEST_NAME), 'utf8')
+    w.source.zip.partLimitBytes = null
+    w.dest = failingRenameTo(w.root, 'S.zip')
+    const r = await run(w)
+    expect(r.status).toBe('completed-with-warnings')
+    expect(await names(w.current)).toEqual(before)
+    expect(await Promise.all(before.map((n) => sha(join(w.current, n))))).toEqual(hashes)
+    expect(await readFile(join(w.current, MANIFEST_NAME), 'utf8')).toBe(manifest)
+  })
+
+  test('a merge whose merged part cannot be written keeps both old parts', async () => {
+    const w = await world({ a: 400 * KB, b: 400 * KB, c: 400 * KB, d: 100 * KB }, MB)
+    w.source.mirror.deletion = 'exact'
+    await run(w)
+    await rm(join(w.src, 'b'))
+    w.dest = failingRenameTo(w.root, 'S.zip')
+    await run(w)
+    expect(await names(w.current)).toEqual(['S.part1.zip', 'S.part2.zip'])
+  })
+
+  posixNonRoot('a file unreadable at zip time keeps the previous part instead of dropping it', async () => {
+    const w = await world({ a: 400 * KB, b: 400 * KB }, MB)
+    await run(w)
+    const before = await sha(join(w.current, 'S.zip'))
+    await put(w.src, 'a', 400 * KB) // a changed, so S.zip must be rewritten…
+    const { files, skipped } = await walkTree(w.src, { excludes: [] })
+    const ctx: JobContext = {
+      source: w.source,
+      destId: 'd1',
+      dest: w.dest,
+      globalExcludes: [],
+      srcFiles: files,
+      srcSkipped: skipped,
+      now: NOW,
+      zip: effectiveZipSettings(w.source, newDestination('/d', 'D'))
+    }
+    const prepared = await prepareMirrorZip(ctx)
+    await chmod(join(w.src, 'b'), 0o000) // …but b cannot be read when the zip is written
+    try {
+      const r = await prepared.execute({ runId: 'r', signal: new AbortController().signal, emit: () => {}, record: () => {} })
+      expect(r.status).toBe('completed-with-warnings')
+      expect(await sha(join(w.current, 'S.zip'))).toBe(before)
+    } finally {
+      await chmod(join(w.src, 'b'), 0o644)
+    }
+    expect((await run(w)).counts.zipped).toBe(1) // retried on the next run
+  })
+})
