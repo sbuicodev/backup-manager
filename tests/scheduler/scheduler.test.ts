@@ -282,8 +282,12 @@ test('job finished before a crash is not re-run on recovery', async () => {
   // a run whose first job finishes, then the app "crashes"
   h.crashOnRun.value = true
   h.s.runNow()
-  await new Promise((r) => setTimeout(r, 20))
-  const persisted = await loadState(h.stateFile, h.cfg)
+  // Wait (up to 2 s) for the run's activeRun record to reach disk.
+  let persisted = await loadState(h.stateFile, h.cfg)
+  for (let i = 0; i < 100 && !persisted.activeRun; i++) {
+    await new Promise((r) => setTimeout(r, 20))
+    persisted = await loadState(h.stateFile, h.cfg)
+  }
   expect(persisted.activeRun?.jobs).toEqual(['s0:d0', 's0:d1'])
   // simulate: first job ended before the crash
   persisted.activeRun = { runId: persisted.activeRun!.runId, jobs: ['s0:d1'] }
