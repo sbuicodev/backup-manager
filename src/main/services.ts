@@ -144,6 +144,8 @@ export async function createServices(opts: ServicesOptions): Promise<Services> {
     readChanges: (runId, q) => readChanges(paths.history, runId, q),
     scheduler,
     start: async () => {
+      // An unreadable config is not "no sources": keep every index until it is fixed.
+      if (!state.ok) return scheduler.start()
       // Disabled sources/destinations keep their index: they may be switched back on.
       const cfg = current()
       const pairs = new Set(

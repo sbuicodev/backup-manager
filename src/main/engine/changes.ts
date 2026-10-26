@@ -18,6 +18,9 @@ export const CHANGE_ACTIONS: ChangeAction[] = [
 const DEFAULT_LIMIT = 200
 const MAX_LIMIT = 1000
 
+/** Run ids are plain names: anything else could reach files outside the history folder. */
+export const SAFE_ID = /^[\w-]+$/
+
 export function changeFileName(runId: string): string {
   return `${runId}.changes.ndjson.gz`
 }
@@ -132,6 +135,7 @@ export async function readChanges(
   const actions = q.actions ? new Set(q.actions) : null
   const search = q.search?.toLowerCase() ?? ''
   let total = 0
+  if (!SAFE_ID.test(runId)) return { total: 0, counts, items }
   const input = createReadStream(join(historyDir, changeFileName(runId)))
   try {
     await new Promise<void>((resolve, reject) => {

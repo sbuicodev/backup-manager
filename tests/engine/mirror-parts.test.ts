@@ -332,6 +332,44 @@ describe('a part that cannot be written never costs the previous archive', () =>
     expect(await names(w.current)).toEqual(['S.part1.zip', 'S.part2.zip'])
   })
 
+  test('a part that cannot be committed logs source files as skipped, not the archive', async () => {
+    const w = await world({ a: 400 * KB, b: 400 * KB, c: 400 * KB }, MB)
+    await run(w)
+    await put(w.src, 'a', 300 * KB)
+    await put(w.src, 'c', 300 * KB)
+    w.dest = failingRenameTo(w.root, 'S.part2.zip')
+    const changes: ChangeEntry[] = []
+    await run(w, changes)
+    expect(changes.some((c) => c.path.endsWith('.zip'))).toBe(false)
+    expect(
+      changes
+        .filter((c) => c.action === 'skipped')
+        .map((c) => [c.path, c.code, c.archive])
+        .sort()
+    ).toEqual([
+      ['a', 'KEPT', 'S.zip'],
+      ['c', 'EACCES', 'S.part2.zip']
+    ])
+  })
+
+  posixNonRoot('an archive whose only content became unreadable is kept, not removed', async () => {
+    const w = await world({ 'A/sub/z': 10 * KB, 'B/w': 10 * KB }, MB)
+    w.source.packaging = 'zip-children'
+    w.source.mirror.deletion = 'exact'
+    await run(w)
+    const before = await names(w.current)
+    await chmod(join(w.src, 'A', 'sub'), 0o000)
+    const changes: ChangeEntry[] = []
+    try {
+      await run(w, changes)
+    } finally {
+      await chmod(join(w.src, 'A', 'sub'), 0o755)
+    }
+    expect(changes.filter((c) => c.action === 'removed')).toEqual([])
+    expect(await names(w.current)).toEqual(before)
+    expect((await run(w)).counts.zipped).toBe(0) // still in the manifest: nothing to rebuild
+  })
+
   posixNonRoot(
     'a file unreadable at zip time keeps the previous part instead of dropping it',
     async () => {

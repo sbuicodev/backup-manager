@@ -34,6 +34,25 @@ export function snapshotKey(name: string): { key: string; date: Date } | null {
   return { key: m[1], date }
 }
 
+const FIRST_PART = /\.part1\.zip(?:\.0*1)?$/
+const ANY_PART = /\.part\d+\.zip(?:\.\d{3,})?$/
+
+/**
+ * Keys of split snapshots (`TS.partN.zip…` at the top of `<slug>/`) whose first part is missing.
+ * A split snapshot's first part is moved into place last, so such a set was left by a crash.
+ */
+export function incompleteSnapshotKeys(names: string[]): Set<string> {
+  const split = new Set<string>()
+  const complete = new Set<string>()
+  for (const n of names) {
+    const k = snapshotKey(n)
+    if (!k || !ANY_PART.test(n)) continue
+    split.add(k.key)
+    if (FIRST_PART.test(n)) complete.add(k.key)
+  }
+  return new Set([...split].filter((k) => !complete.has(k)))
+}
+
 /** Date of the snapshot `name` belongs to, or null. */
 export function parseSnapshotName(name: string): Date | null {
   return snapshotKey(name)?.date ?? null

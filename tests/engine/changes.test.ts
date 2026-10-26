@@ -92,3 +92,12 @@ test('recording respects backpressure: buffered bytes stay bounded when drained'
     (await readChanges(dir, 'run-big', { sourceId: 's1', destId: 'd1', limit: 1 })).total
   ).toBe(200_000)
 })
+
+test('a run id that is not a plain name never reads outside the history folder', async () => {
+  const dir = await tmpDir()
+  const rec = await ChangeRecorder.open(dir, 'outside')
+  rec.record({ sourceId: 's', destId: 'd', action: 'added', path: 'a' })
+  await rec.close()
+  const page = await readChanges(join(dir, 'history'), '../outside', { sourceId: 's', destId: 'd' })
+  expect(page.total).toBe(0)
+})

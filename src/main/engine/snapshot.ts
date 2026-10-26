@@ -10,8 +10,8 @@ import {
   type JobContext,
   type PreparedJob
 } from './job'
-import { MTIME_TOLERANCE_MS } from './mirror-shared'
-import { formatTimestamp, uniqueTimestampName } from './naming'
+import { MTIME_TOLERANCE_MS, isAtOrUnder, unreadableRels } from './mirror-shared'
+import { formatTimestamp, incompleteSnapshotKeys, snapshotKey, uniqueTimestampName } from './naming'
 import { chunkName, packFresh, partBaseName, type PartPlan } from './packaging/parts'
 import { computeZipTargets } from './packaging/targets'
 import { splitIntoChunks, writeZip } from './packaging/zip'
@@ -46,9 +46,6 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
     bytes: ctx.srcFiles.reduce((n, f) => n + f.size, 0),
     skippedEntries: ctx.srcSkipped
   }
-  const previous = ctx.indexDir
-    ? await readSnapshotIndex(ctx.indexDir, source.id, ctx.destId)
-    : null
 
   const execute = (x: ExecContext): ReturnType<PreparedJob['execute']> =>
     asJobAbort(dest, async () => {
@@ -57,7 +54,18 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
       // Partials only ever live at the top of <slug>/; finalized snapshots are never swept.
       await dest.removePartials(slug, false)
       await dest.mkdirp(slug)
-      const taken = new Set((await dest.list(slug)).map((e) => e.name))
+      const listed = (await dest.list(slug)).map((e) => e.name)
+      // Split sets whose first part never arrived were left by a crash while moving them.
+      const incomplete = incompleteSnapshotKeys(listed)
+      for (const n of listed) {
+        const k = snapshotKey(n)
+        if (k && incomplete.has(k.key)) await dest.remove(`${slug}/${n}`)
+      }
+      const taken = new Set(listed.filter((n) => !incomplete.has(snapshotKey(n)?.key ?? '')))
+      // Read here, not at planning: previews never need the previous file list.
+      const previous = ctx.indexDir
+        ? await readSnapshotIndex(ctx.indexDir, source.id, ctx.destId)
+        : null
       const name = uniqueTimestampName(formatTimestamp(ctx.now), taken)
       const partialDir = `${slug}/${name}${PARTIAL_SUFFIX}`
       const absOf = (rel: string): string => join(source.path, ...rel.split('/'))
@@ -141,6 +149,11 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
               x.signal.throwIfAborted()
               files.push(...(await writePart(partialDir, name, part)))
             }
+            // The first part (its first chunk last of all) moves last: until it is in place,
+            // the set is recognised as incomplete and never counts as a snapshot.
+            const rank = (f: string): number =>
+              /\.part1\.zip(\.0*1)?$/.test(f) ? 2 : /\.part1\.zip\./.test(f) ? 1 : 0
+            files.sort((a, b) => rank(a) - rank(b))
             for (const f of files) {
               await dest.rename(`${partialDir}/${f}`, `${slug}/${f}`)
               moved.push(f)
@@ -152,7 +165,11 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
           for (const a of archives) {
             for (const part of a.parts) {
               x.signal.throwIfAborted()
-              await run.guard(partBaseName(a.base, part), () => writePart(partialDir, a.base, part))
+              const file = partBaseName(a.base, part)
+              await run.guard(file, () => writePart(partialDir, a.base, part), {
+                rels: part.files.map((f) => f.rel),
+                archive: part.chunked ? chunkName(file, 1) : file
+              })
             }
           }
           await dest.rename(partialDir, `${slug}/${name}`)
@@ -174,8 +191,12 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
             run.change('updated', rel, extra)
           }
         }
+        // Files still in the source (or unreadable there) but not written were logged as skipped.
+        const inSource = new Set(ctx.srcFiles.map((f) => f.rel))
+        const unreadable = unreadableRels(ctx)
         for (const rel of before.keys()) {
-          if (written.has(rel)) continue
+          if (written.has(rel) || inSource.has(rel)) continue
+          if (unreadable.some((u) => isAtOrUnder(rel, u))) continue
           run.change('removed', rel)
           await run.settle()
         }

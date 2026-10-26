@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+  incompleteSnapshotKeys,
   snapshotKey,
   formatTimestamp,
   parseSnapshotName,
@@ -66,4 +67,21 @@ test('uniqueTimestampName treats a split snapshot as taken', () => {
 
 test('snapshotKey accepts piece numbers of 1000 and more', () => {
   expect(snapshotKey('2026-10-25_165200.part1.zip.1000')?.key).toBe('2026-10-25_165200')
+})
+
+test('incompleteSnapshotKeys finds split sets whose first part is missing', () => {
+  const T = '2026-10-25_165200'
+  const U = '2026-10-24_120000'
+  const V = '2026-10-23_120000'
+  expect(
+    incompleteSnapshotKeys([
+      `${T}.part2.zip`,
+      `${T}.part3.zip`,
+      `${U}.part1.zip.001`,
+      `${U}.part2.zip`,
+      `${V}.part1.zip.002`,
+      `${V}.zip`,
+      'current'
+    ])
+  ).toEqual(new Set([T, V]))
 })

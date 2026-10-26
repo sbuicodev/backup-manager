@@ -137,8 +137,8 @@ export class Scheduler {
         return { sourceId: s.id, at: nextRunAt(s.schedule, last, now).toISOString() }
       }),
       pendingRetries: Object.entries(this.state.jobs)
-        .filter(([, j]) => j.pendingRetry)
-        .map(([k, j]) => ({ ...parseJobKey(k), nextRetryAt: j.nextRetryAt }))
+        .filter(([k, j]) => j.pendingRetry && retryEnabled(config, parseJobKey(k)))
+        .map(([k, j]) => ({ ...parseJobKey(k), nextRetryAt: validDate(j.nextRetryAt) }))
     }
   }
 
@@ -229,10 +229,9 @@ export class Scheduler {
       for (const [key, js] of Object.entries(this.state.jobs)) {
         if (!js.pendingRetry || active.has(key)) continue
         const j = parseJobKey(key)
-        const source = config.sources.find((s) => s.id === j.sourceId)
-        const dest = config.destinations.find((d) => d.id === j.destId)
-        if (!source?.enabled || !source.retryWhenAvailable || !dest?.enabled) continue
-        const next = js.nextRetryAt === null ? null : new Date(js.nextRetryAt).getTime()
+        if (!retryEnabled(config, j)) continue
+        const at = validDate(js.nextRetryAt)
+        const next = at === null ? null : new Date(at).getTime()
         // A due time beyond the cap means the clock moved back: check now rather than stall.
         const due = next === null || next <= now.getTime() || next > now.getTime() + RETRY_MAX_MS
         if (!due) continue
@@ -314,6 +313,18 @@ export class Scheduler {
     void this.save()
     this.changed()
   }
+}
+
+/** Whether a pending retry can still run: its source and destination exist and allow it. */
+function retryEnabled(config: Config, j: JobRequest): boolean {
+  const source = config.sources.find((s) => s.id === j.sourceId)
+  if (!source?.enabled || !source.retryWhenAvailable) return false
+  return destinationsFor(config, source).some((d) => d.id === j.destId)
+}
+
+/** A stored ISO time, or null when it is missing or not a valid date (then a check is due). */
+function validDate(v: string | null): string | null {
+  return v !== null && Number.isFinite(new Date(v).getTime()) ? v : null
 }
 
 function clearRetry(js: JobState): void {

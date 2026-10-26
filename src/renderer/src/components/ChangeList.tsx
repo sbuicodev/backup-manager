@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { ChangeAction, ChangeEntry, ChangePage } from '@shared/types'
 import { Badge } from '@/components/ui/badge'
@@ -46,6 +46,8 @@ export function ChangeList({
   const [page, setPage] = useState<ChangePage | null>(null)
   const [items, setItems] = useState<ChangeEntry[]>([])
   const [loading, setLoading] = useState(false)
+  // Only the latest request may update the list: an older filter's answer can arrive later.
+  const latest = useRef(0)
 
   useEffect(() => {
     const h = setTimeout(() => setQuery(search.trim()), 250)
@@ -54,6 +56,7 @@ export function ChangeList({
 
   const shown = ACTIONS.map((a) => a.id).filter((a) => !hidden.has(a))
   const load = async (offset: number): Promise<void> => {
+    const token = ++latest.current
     setLoading(true)
     try {
       const p = await api.history.changes(runId, {
@@ -64,10 +67,11 @@ export function ChangeList({
         offset,
         limit: PAGE
       })
+      if (token !== latest.current) return
       setPage(p)
       setItems((prev) => (offset === 0 ? p.items : [...prev, ...p.items]))
     } finally {
-      setLoading(false)
+      if (token === latest.current) setLoading(false)
     }
   }
   const filterKey = `${[...hidden].sort().join(',')}|${query}`

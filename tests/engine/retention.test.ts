@@ -100,3 +100,22 @@ test('applyRetention prunes every part and chunk of an old split snapshot as one
   expect(r.pruned).toBe(1)
   expect(await readTree(root)).toEqual({ [`S/${recent}/a.txt`]: 'keep' })
 })
+
+test('a split set left by a crash does not count toward keepMin', async () => {
+  const root = await tmpDir()
+  const n = (d: number): string => formatTimestamp(ago(d))
+  await makeTree(root, {
+    [`S/${n(40)}.part1.zip`]: '',
+    [`S/${n(40)}.part2.zip`]: '',
+    [`S/${n(35)}.part2.zip`]: '' // part1 never moved into place
+  })
+  const source = { ...newSource('/src', 'S', []), mode: 'snapshot' as const }
+  source.snapshot = { keepMin: 1, maxAgeDays: 30 }
+  const r = await applyRetention(new FsDestination(root), source, now)
+  expect(r.pruned).toBe(0)
+  expect(Object.keys(await readTree(root)).sort()).toEqual([
+    `S/${n(40)}.part1.zip`,
+    `S/${n(40)}.part2.zip`,
+    `S/${n(35)}.part2.zip`
+  ])
+})

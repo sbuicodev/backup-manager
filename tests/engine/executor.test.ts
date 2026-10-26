@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs'
+import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { defaultConfig, newDestination, newSource, type Config } from '@shared/schema'
@@ -202,4 +202,14 @@ test('a broken change file never stops the run from finishing and being logged',
   ])
   expect(log).not.toBeNull()
   expect((await listRuns(history)).map((r) => r.id)).toEqual(['run-1'])
+})
+
+test('a planning error that is not a cancel leaves no change-history file behind', async () => {
+  const { cfg, history } = await world()
+  const makeDestination = (): FsDestination => {
+    throw new Error('boom')
+  }
+  await expect(runBackup(cfg, {}, opts(history, { makeDestination }))).rejects.toThrow('boom')
+  await new Promise((r) => setTimeout(r, 100)) // an unclosed stream creates its file late
+  expect(readdirSync(history).filter((f) => f.endsWith('.bm-partial'))).toEqual([])
 })

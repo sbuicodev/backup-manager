@@ -35,6 +35,8 @@ export type ExecContext = {
   /** Waits until buffered change entries have been written out. */
   drain: () => Promise<void>
 }
+/** Source files a warning about an archive concerns, and the archive's shown name. */
+export type Affected = { rels: string[]; archive: string }
 export type PreparedJob = { plan: JobPlan; execute(x: ExecContext): Promise<JobResult> }
 
 export function effectiveExcludes(source: Source, globalExcludes: string[]): string[] {
@@ -69,11 +71,19 @@ export class JobRun {
     }
   }
 
-  warn(w: Warning): void {
+  /**
+   * Records a warning. `affected` names the source files it concerns when its path is an archive
+   * rather than a source path; each is logged as skipped, with the archive, instead of the path.
+   */
+  warn(w: Warning, affected?: Affected): void {
     this.warnings.push(w)
     this.counts.skipped++
     this.x.emit({ type: 'warning', runId: this.x.runId, warning: w })
-    if (w.path !== '') this.change('skipped', w.path, { code: w.code })
+    if (affected) {
+      for (const rel of affected.rels) {
+        this.change('skipped', rel, { code: w.code, archive: affected.archive })
+      }
+    } else if (w.path !== '') this.change('skipped', w.path, { code: w.code })
   }
 
   change(
@@ -114,7 +124,7 @@ export class JobRun {
   }
 
   /** Runs a per-file operation; file-level errors become warnings, others abort the job. */
-  async guard<T>(path: string, fn: () => Promise<T>): Promise<T | undefined> {
+  async guard<T>(path: string, fn: () => Promise<T>, affected?: Affected): Promise<T | undefined> {
     this.x.signal.throwIfAborted()
     try {
       return await fn()
@@ -122,7 +132,7 @@ export class JobRun {
       const kind = await classifyError(err, this.ctx.dest)
       const e = err as NodeJS.ErrnoException
       if (kind === 'file') {
-        this.warn({ path, code: e.code ?? 'ERROR', message: e.message })
+        this.warn({ path, code: e.code ?? 'ERROR', message: e.message }, affected)
         return undefined
       }
       throw new JobAbort(kind, `${path}: ${e.message}`)

@@ -306,3 +306,18 @@ test('snapshot runs through services record a diff against the previous snapshot
   expect(page.items.map((i) => [i.action, i.path])).toEqual([['added', 'b.txt']])
   await stop()
 })
+
+test('an invalid config at startup keeps every snapshot index', async () => {
+  const base = await tmpDir()
+  await makeTree(base, { 'user/config.json': '{broken' })
+  await writeSnapshotIndex(join(base, 'user', 'snapshot-index'), 's', 'd', [])
+  const services = await createServices({
+    userDataDir: join(base, 'user'),
+    platform: { now: () => new Date(), setInterval: () => () => {}, isOnBattery: () => false },
+    broadcast: () => {},
+    onRunFinished: () => {}
+  })
+  await services.start()
+  expect(await readdir(services.paths.snapshotIndex)).toHaveLength(1)
+  services.stop()
+})

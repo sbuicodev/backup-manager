@@ -81,7 +81,10 @@ export async function runBackup(
       })
     ).prepared
   } catch (err) {
-    if (!signal.aborted) throw err
+    if (!signal.aborted) {
+      await recorder.close()
+      throw err
+    }
   }
   emit({ type: 'run-start', runId, trigger: opts.trigger, totalJobs: prepared.length })
 

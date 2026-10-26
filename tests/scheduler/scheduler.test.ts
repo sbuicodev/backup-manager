@@ -466,6 +466,29 @@ describe('retry timing', () => {
       { sourceId: 's0', destId: 'd0', nextRetryAt: at(20, 11, 3).toISOString() }
     ])
   })
+
+  test('status leaves out retries whose source or destination no longer allows them', async () => {
+    const h = await skipped()
+    h.cfg.sources[0].retryWhenAvailable = false
+    expect(h.s.status().pendingRetries).toEqual([])
+    h.cfg.sources[0].retryWhenAvailable = true
+    h.cfg.destinations[0].enabled = false
+    expect(h.s.status().pendingRetries).toEqual([])
+    h.cfg.destinations[0].enabled = true
+    h.cfg.sources[0].destinationIds = []
+    expect(h.s.status().pendingRetries).toEqual([])
+  })
+
+  test('an invalid nextRetryAt is treated as due instead of stalling the retry', async () => {
+    const h = await skipped()
+    const state = (h.s as unknown as { state: { jobs: Record<string, { nextRetryAt: string }> } })
+      .state
+    state.jobs['s0:d0'].nextRetryAt = 'not a date'
+    expect(h.s.status().pendingRetries[0].nextRetryAt).toBeNull()
+    h.checks.length = 0
+    await h.advance(MIN)
+    expect(h.checks).toHaveLength(1)
+  })
 })
 
 test('a retry check that moves the next check time notifies status listeners', async () => {

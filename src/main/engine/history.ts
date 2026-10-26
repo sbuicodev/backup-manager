@@ -1,15 +1,13 @@
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { RunLog, RunSummary } from '@shared/types'
-import { changeFileName } from './changes'
+import { SAFE_ID, changeFileName } from './changes'
 import { atomicWriteText } from './fsutil'
 import { formatTimestamp, uniqueTimestampName } from './naming'
 
 export const HISTORY_LIMIT = 200
 
 export type { RunSummary }
-
-const SAFE_ID = /^[\w-]+$/
 
 export function newRunId(now: Date, existing: Set<string>): string {
   return uniqueTimestampName(formatTimestamp(now), existing)

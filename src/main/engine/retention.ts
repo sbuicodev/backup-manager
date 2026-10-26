@@ -1,6 +1,6 @@
 import type { Source } from '@shared/schema'
 import type { Destination } from './destination'
-import { parseSnapshotName, snapshotKey } from './naming'
+import { incompleteSnapshotKeys, parseSnapshotName, snapshotKey } from './naming'
 
 const DAY = 86_400_000
 
@@ -49,9 +49,12 @@ export async function applyRetention(
   if (source.mode === 'snapshot') {
     // A snapshot can be several entries (a folder, a zip, or parts and chunks): group by key.
     const groups = new Map<string, { date: Date; names: string[] }>()
-    for (const e of await dest.list(base)) {
+    const entries = await dest.list(base)
+    // A split set left by a crash is not a snapshot: it must not count toward keepMin.
+    const incomplete = incompleteSnapshotKeys(entries.map((e) => e.name))
+    for (const e of entries) {
       const k = snapshotKey(e.name)
-      if (!k) continue
+      if (!k || incomplete.has(k.key)) continue
       const g = groups.get(k.key) ?? { date: k.date, names: [] }
       g.names.push(e.name)
       groups.set(k.key, g)
