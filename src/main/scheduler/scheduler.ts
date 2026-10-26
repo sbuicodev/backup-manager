@@ -223,6 +223,7 @@ export class Scheduler {
     }
 
     const retries: JobRequest[] = []
+    let retryTimingChanged = false
     if (!deferForBattery) {
       const active = new Set(this.queue.active?.jobs.map(jobKey) ?? [])
       for (const [key, js] of Object.entries(this.state.jobs)) {
@@ -238,11 +239,14 @@ export class Scheduler {
         // Every check moves the sequence on, so a retry that fails again waits its turn.
         js.retryAttempts += 1
         js.nextRetryAt = new Date(now.getTime() + retryDelayMs(js.retryAttempts)).toISOString()
+        retryTimingChanged = true
         if (await this.deps.isDestinationAvailable(j.destId)) retries.push(j)
       }
     }
 
     await this.save()
+    // The UI shows "next check in N min", so it must hear when a check moves that time.
+    if (retryTimingChanged) this.changed()
     if (due.length > 0) this.queue.enqueue(due, allLate ? 'catch-up' : 'scheduled')
     if (retries.length > 0) this.queue.enqueue(retries, 'retry')
   }

@@ -463,3 +463,15 @@ describe('retry timing', () => {
     ])
   })
 })
+
+test('a retry check that moves the next check time notifies status listeners', async () => {
+  const h = await harness([daily('11:00')])
+  h.outcome('s0:d0', { status: 'skipped', reason: 'destination-missing' })
+  await h.s.start()
+  await h.advance(60 * MIN)
+  h.avail.d0 = false
+  let calls = 0
+  h.s.onChange(() => calls++)
+  await h.advance(MIN) // check at +1 → next check moves to +3
+  expect(calls).toBeGreaterThan(0)
+})
