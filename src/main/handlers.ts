@@ -14,6 +14,16 @@ export type Handler = (...args: unknown[]) => Promise<unknown>
 
 const SourceIds = z.array(z.string()).optional()
 const Id = z.string()
+const ChangeQuerySchema = z.object({
+  sourceId: z.string(),
+  destId: z.string(),
+  actions: z
+    .array(z.enum(['added', 'updated', 'removed', 'trashed', 'deleted', 'skipped']))
+    .optional(),
+  search: z.string().max(500).optional(),
+  offset: z.number().int().min(0).optional(),
+  limit: z.number().int().min(1).max(1000).optional()
+})
 const PauseUntil = z.union([z.literal('forever'), z.iso.datetime()])
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -59,6 +69,8 @@ export function createHandlers(services: Services, dialogs: Dialogs): Record<str
     },
     [CH.schedulerResume]: async () => scheduler.resume(),
     [CH.historyList]: async () => services.listRuns(),
-    [CH.historyGet]: async (id) => services.getRun(parse(Id, id))
+    [CH.historyGet]: async (id) => services.getRun(parse(Id, id)),
+    [CH.historyChanges]: async (runId, q) =>
+      services.readChanges(parse(Id, runId), parse(ChangeQuerySchema, q))
   }
 }

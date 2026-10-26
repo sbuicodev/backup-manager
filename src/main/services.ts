@@ -2,12 +2,14 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CH, type ConfigState, type SaveResult } from '@shared/ipc'
 import { defaultConfig, type Config } from '@shared/schema'
-import type { Plan, RunLog, RunSummary } from '@shared/types'
+import type { ChangePage, ChangeQuery, Plan, RunLog, RunSummary } from '@shared/types'
 import { loadConfig, saveConfig } from './engine/config'
 import { FsDestination } from './engine/destination'
 import { runBackup } from './engine/executor'
 import { getRun, listRuns, newRunId } from './engine/history'
+import { readChanges } from './engine/changes'
 import { planRun } from './engine/planner'
+import { pruneSnapshotIndexes } from './engine/snapshot-index'
 import { Scheduler, type SchedulerDeps } from './scheduler/scheduler'
 
 export type Platform = {
@@ -24,7 +26,7 @@ export type ServicesOptions = {
 }
 
 export type Services = {
-  paths: { config: string; state: string; history: string }
+  paths: { config: string; state: string; history: string; snapshotIndex: string }
   configState(): ConfigState
   /** The current valid config, or an empty default while the file on disk is invalid. */
   config(): Config
@@ -35,6 +37,7 @@ export type Services = {
   availability(): Promise<Record<string, boolean>>
   listRuns(): Promise<RunSummary[]>
   getRun(id: string): Promise<RunLog | null>
+  readChanges(runId: string, q: ChangeQuery): Promise<ChangePage>
   scheduler: Scheduler
   start(): Promise<void>
   stop(): void
@@ -45,7 +48,8 @@ export async function createServices(opts: ServicesOptions): Promise<Services> {
   const paths = {
     config: join(userDataDir, 'config.json'),
     state: join(userDataDir, 'state.json'),
-    history: join(userDataDir, 'history')
+    history: join(userDataDir, 'history'),
+    snapshotIndex: join(userDataDir, 'snapshot-index')
   }
   const loaded = await loadConfig(paths.config)
   let state: ConfigState = loaded.ok
@@ -85,6 +89,7 @@ export async function createServices(opts: ServicesOptions): Promise<Services> {
           trigger: run.trigger,
           signal,
           historyDir: paths.history,
+          indexDir: paths.snapshotIndex,
           now: platform.now,
           emit: (e) => {
             broadcast(CH.progress, e)
@@ -120,7 +125,12 @@ export async function createServices(opts: ServicesOptions): Promise<Services> {
       return () => listeners.delete(cb)
     },
     plan: async (sourceIds) =>
-      (await planRun(current(), sourceIds ? { sourceIds } : {}, { now: platform.now })).plan,
+      (
+        await planRun(current(), sourceIds ? { sourceIds } : {}, {
+          now: platform.now,
+          indexDir: paths.snapshotIndex
+        })
+      ).plan,
     availability: async () => {
       const entries = await Promise.all(
         current().destinations.map(
@@ -131,8 +141,21 @@ export async function createServices(opts: ServicesOptions): Promise<Services> {
     },
     listRuns: () => listRuns(paths.history),
     getRun: (id) => getRun(paths.history, id),
+    readChanges: (runId, q) => readChanges(paths.history, runId, q),
     scheduler,
-    start: () => scheduler.start(),
+    start: async () => {
+      // Disabled sources/destinations keep their index: they may be switched back on.
+      const cfg = current()
+      const pairs = new Set(
+        cfg.sources.flatMap((s) =>
+          cfg.destinations
+            .filter((d) => s.destinationIds === 'all' || s.destinationIds.includes(d.id))
+            .map((d) => `${s.id}__${d.id}`)
+        )
+      )
+      await pruneSnapshotIndexes(paths.snapshotIndex, pairs)
+      await scheduler.start()
+    },
     stop: () => scheduler.stop()
   }
 }

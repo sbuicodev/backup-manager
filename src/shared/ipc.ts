@@ -1,5 +1,13 @@
 import type { Config } from './schema'
-import type { Plan, ProgressEvent, RunLog, RunSummary, SchedulerStatus } from './types'
+import type {
+  ChangePage,
+  ChangeQuery,
+  Plan,
+  ProgressEvent,
+  RunLog,
+  RunSummary,
+  SchedulerStatus
+} from './types'
 
 export type ConfigState =
   { ok: true; config: Config; path: string } | { ok: false; errors: string[]; path: string }
@@ -34,6 +42,7 @@ export type Api = {
   history: {
     list(): Promise<RunSummary[]>
     get(id: string): Promise<RunLog | null>
+    changes(runId: string, q: ChangeQuery): Promise<ChangePage>
   }
   app: { onNavigate(cb: (screen: Screen, arg?: string) => void): () => void }
 }
@@ -55,6 +64,7 @@ export const CH = {
   schedulerResume: 'scheduler:resume',
   historyList: 'history:list',
   historyGet: 'history:get',
+  historyChanges: 'history:changes',
   progress: 'run:progress',
   status: 'scheduler:status-changed',
   configChanged: 'config:changed',

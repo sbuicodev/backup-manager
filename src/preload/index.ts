@@ -37,7 +37,8 @@ const api: Api = {
   },
   history: {
     list: () => invoke(CH.historyList),
-    get: (id) => invoke(CH.historyGet, id)
+    get: (id) => invoke(CH.historyGet, id),
+    changes: (runId, q) => invoke(CH.historyChanges, runId, q)
   },
   app: { onNavigate: (cb) => subscribe(CH.navigate, cb) }
 }

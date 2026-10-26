@@ -1,9 +1,11 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { CH } from '@shared/ipc'
 import { defaultConfig, newDestination, newSource } from '@shared/schema'
-import type { ProgressEvent, SchedulerStatus } from '@shared/types'
+import type { ChangePage, ProgressEvent, SchedulerStatus } from '@shared/types'
+import { writeRunLog } from '../../src/main/engine/history'
+import { writeSnapshotIndex } from '../../src/main/engine/snapshot-index'
 import { createHandlers } from '../../src/main/handlers'
 import { createServices } from '../../src/main/services'
 import { makeTree, tmpDir } from '../helpers/fs'
@@ -192,4 +194,115 @@ test('invalid config file on disk → config:get reports errors; reset restores 
   await handlers[CH.configReset]()
   expect(await handlers[CH.configGet]()).toMatchObject({ ok: true, config: defaultConfig() })
   services.stop()
+})
+
+async function waitForRunEnd(broadcasts: [string, unknown][], count: number): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    const ends = broadcasts.filter(
+      ([ch, e]) => ch === CH.progress && (e as ProgressEvent).type === 'run-end'
+    )
+    if (ends.length >= count) return
+    await new Promise((r) => setTimeout(r, 20))
+  }
+  throw new Error('run did not finish')
+}
+
+test("history:changes returns the run's file changes, filtered and paged", async () => {
+  const { handlers, base, broadcasts, stop } = await setup()
+  const cfg = validConfig(base)
+  await handlers[CH.configSave](cfg)
+  const id = (await handlers[CH.runStart]()) as string
+  await waitForRunEnd(broadcasts, 1)
+  const page = (await handlers[CH.historyChanges](id, {
+    sourceId: cfg.sources[0].id,
+    destId: cfg.destinations[0].id
+  })) as ChangePage
+  expect(page.total).toBe(1)
+  expect(page.items[0]).toMatchObject({ action: 'added', path: 'a.txt', size: 1 })
+  const none = (await handlers[CH.historyChanges](id, {
+    sourceId: cfg.sources[0].id,
+    destId: cfg.destinations[0].id,
+    actions: ['deleted']
+  })) as ChangePage
+  expect(none.total).toBe(0)
+  await stop()
+})
+
+test('history:changes for a run without a change file (older run) returns an empty page', async () => {
+  const { handlers, base, stop } = await setup()
+  await writeRunLog(join(base, 'user', 'history'), {
+    id: '2026-01-01_000000',
+    trigger: 'manual',
+    startedAt: '2026-01-01T00:00:00.000Z',
+    endedAt: '2026-01-01T00:00:01.000Z',
+    status: 'completed',
+    jobs: [
+      {
+        sourceId: 's',
+        destId: 'd',
+        status: 'completed',
+        counts: { copied: 1, updated: 0, zipped: 0, trashed: 0, deleted: 0, pruned: 0, skipped: 0 },
+        bytesWritten: 1,
+        warnings: []
+      }
+    ]
+  })
+  expect(await handlers[CH.historyGet]('2026-01-01_000000')).toMatchObject({ status: 'completed' })
+  expect(
+    await handlers[CH.historyChanges]('2026-01-01_000000', { sourceId: 's', destId: 'd' })
+  ).toEqual({
+    total: 0,
+    counts: { added: 0, updated: 0, removed: 0, trashed: 0, deleted: 0, skipped: 0 },
+    items: []
+  })
+  await stop()
+})
+
+test('history:changes rejects invalid queries', async () => {
+  const { handlers, stop } = await setup()
+  const q = { sourceId: 's', destId: 'd' }
+  await expect(handlers[CH.historyChanges]('x', { ...q, limit: 5000 })).rejects.toThrow(
+    'invalid arguments'
+  )
+  await expect(handlers[CH.historyChanges]('x', { ...q, actions: ['bogus'] })).rejects.toThrow(
+    'invalid arguments'
+  )
+  await expect(handlers[CH.historyChanges]('x', { ...q, offset: -1 })).rejects.toThrow(
+    'invalid arguments'
+  )
+  await expect(handlers[CH.historyChanges](42, q)).rejects.toThrow('invalid arguments')
+  await stop()
+})
+
+test('start prunes snapshot indexes of pairs no longer in the config', async () => {
+  const base = await tmpDir()
+  await writeSnapshotIndex(join(base, 'user', 'snapshot-index'), 'gone', 'x', [])
+  const services = await createServices({
+    userDataDir: join(base, 'user'),
+    platform: { now: () => new Date(), setInterval: () => () => {}, isOnBattery: () => false },
+    broadcast: () => {},
+    onRunFinished: () => {}
+  })
+  expect(services.paths.snapshotIndex).toBe(join(base, 'user', 'snapshot-index'))
+  await services.start()
+  expect(await readdir(services.paths.snapshotIndex)).toEqual([])
+  services.stop()
+})
+
+test('snapshot runs through services record a diff against the previous snapshot', async () => {
+  const { handlers, base, broadcasts, stop } = await setup()
+  const cfg = validConfig(base)
+  cfg.sources[0] = { ...cfg.sources[0], mode: 'snapshot' }
+  await handlers[CH.configSave](cfg)
+  await handlers[CH.runStart]()
+  await waitForRunEnd(broadcasts, 1)
+  await writeFile(join(base, 'src', 'b.txt'), 'b')
+  const id2 = (await handlers[CH.runStart]()) as string
+  await waitForRunEnd(broadcasts, 2)
+  const page = (await handlers[CH.historyChanges](id2, {
+    sourceId: cfg.sources[0].id,
+    destId: cfg.destinations[0].id
+  })) as ChangePage
+  expect(page.items.map((i) => [i.action, i.path])).toEqual([['added', 'b.txt']])
+  await stop()
 })
