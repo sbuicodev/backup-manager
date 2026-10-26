@@ -74,7 +74,7 @@ export function Settings({
   }
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <PageHeader title="Settings" />
       <div className="grid gap-6">
         <Card>

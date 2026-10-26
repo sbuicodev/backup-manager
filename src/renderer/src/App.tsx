@@ -214,20 +214,23 @@ function App(): React.JSX.Element {
           />
           <main className="flex min-w-0 flex-1 flex-col">
             <div className="flex-1 overflow-auto p-6">
-              {screen === 'destinations' && <Destinations cfg={cfg} config={config} />}
-              {screen === 'settings' && (
-                <Settings cfg={cfg} config={config} path={cfg.state.path} />
-              )}
-              {screen === 'sources' && <Sources cfg={cfg} config={config} status={status} />}
-              {screen === 'run' && <Run config={config} status={status} progress={progress} />}
-              {screen === 'history' && (
-                <History
-                  config={config}
-                  status={status}
-                  openId={screenArg}
-                  refreshKey={progress.lastLog?.id ?? null}
-                />
-              )}
+              {/* Pages sit in one centred column so wide windows don't leave them on the left. */}
+              <div className="mx-auto w-full max-w-5xl">
+                {screen === 'destinations' && <Destinations cfg={cfg} config={config} />}
+                {screen === 'settings' && (
+                  <Settings cfg={cfg} config={config} path={cfg.state.path} />
+                )}
+                {screen === 'sources' && <Sources cfg={cfg} config={config} status={status} />}
+                {screen === 'run' && <Run config={config} status={status} progress={progress} />}
+                {screen === 'history' && (
+                  <History
+                    config={config}
+                    status={status}
+                    openId={screenArg}
+                    refreshKey={progress.lastLog?.id ?? null}
+                  />
+                )}
+              </div>
             </div>
           </main>
         </div>
