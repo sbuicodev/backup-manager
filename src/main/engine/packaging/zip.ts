@@ -143,9 +143,10 @@ export async function readZipEntryCount(file: string): Promise<number> {
 }
 
 /**
- * Cuts the finished archive at `tempRel` into `targetRel.001`, `.002`, … of `chunkSize` bytes
- * (each written atomically), removes chunks of an older, longer version, then removes
- * `tempRel`. On failure every chunk written by this call and `tempRel` are removed.
+ * Cuts the finished archive at `tempRel` into `targetRel.001`, `.002`, … of `chunkSize` bytes.
+ * Every new piece is first written as a partial; only once all exist are they renamed over the
+ * previous set (whose extra higher-numbered pieces are then removed). A failure or cancel
+ * before that point removes only the partials, so the previous set stays intact.
  */
 export async function splitIntoChunks(
   dest: Destination,
@@ -159,7 +160,7 @@ export async function splitIntoChunks(
   const dir = slash < 0 ? '' : target.slice(0, slash)
   const file = target.slice(slash + 1)
   const inDir = (name: string): string => (dir ? `${dir}/${name}` : name)
-  const written: string[] = []
+  const staged: { name: string; partial: string }[] = []
   try {
     const size = (await dest.stat(tempRel))?.size ?? 0
     const count = Math.max(1, Math.ceil(size / chunkSize))
@@ -167,26 +168,27 @@ export async function splitIntoChunks(
       signal?.throwIfAborted()
       const name = chunkName(file, i)
       const partial = partialSiblingRel(inDir(name))
+      staged.push({ name, partial })
       const start = (i - 1) * chunkSize
       await pipeline(
         dest.readStream(tempRel, start, Math.min(size, start + chunkSize) - 1),
         await dest.writeStream(partial),
         { signal }
       )
-      await dest.rename(partial, inDir(name))
-      written.push(name)
     }
-    const keep = new Set(written)
-    const stale = new RegExp(`^${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.\\d{3,}$`)
-    for (const e of await dest.list(dir)) {
-      if (!e.isDir && stale.test(e.name) && !keep.has(e.name)) await dest.remove(inDir(e.name))
-    }
-    await dest.remove(tempRel)
-    return written
   } catch (err) {
-    for (const name of written) await dest.remove(inDir(name)).catch(() => {})
-    await dest.removePartials(dir, false).catch(() => {})
+    for (const { partial } of staged) await dest.remove(partial).catch(() => {})
     await dest.remove(tempRel).catch(() => {})
     throw err
   }
+  // Swap: no cancellation from here on. A crash in this short window can leave a mixed set,
+  // which the next run detects (fingerprint mismatch) and rewrites from the source.
+  for (const { name, partial } of staged) await dest.rename(partial, inDir(name))
+  const keep = new Set(staged.map((p) => p.name))
+  const stale = new RegExp(`^${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.\\d{3,}$`)
+  for (const e of await dest.list(dir)) {
+    if (!e.isDir && stale.test(e.name) && !keep.has(e.name)) await dest.remove(inDir(e.name))
+  }
+  await dest.remove(tempRel)
+  return staged.map((p) => p.name)
 }

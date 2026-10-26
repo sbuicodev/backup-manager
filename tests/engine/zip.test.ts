@@ -1,5 +1,5 @@
-import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { createHash, randomBytes } from 'node:crypto'
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import yauzl from 'yauzl'
@@ -289,4 +289,55 @@ test('splitIntoChunks removes a stale 4-digit piece', async () => {
   )
   await splitIntoChunks(dest, r.tempRel!, 'S/B.part1.zip', 1024 * 1024)
   expect((await dest.list('S')).map((e) => e.name)).not.toContain('B.part1.zip.1000')
+})
+
+describe('replacing an existing piece set', () => {
+  // Hashes, not buffers: a failing deep-equal on megabytes of bytes takes forever to diff.
+  const snapshot = async (root: string): Promise<Record<string, string>> => {
+    const out: Record<string, string> = {}
+    for (const n of await readdir(join(root, 'S'))) {
+      out[n] = createHash('sha1').update(await readFile(join(root, 'S', n))).digest('hex')
+    }
+    return out
+  }
+  async function oldSet(): Promise<{ src: string; dest: FsDestination; root: string; old: Record<string, string> }> {
+    const src = await tmpDir()
+    const root = await tmpDir()
+    const dest = new FsDestination(root)
+    await writeFile(join(src, 'big.bin'), randomBytes(3 * 1024 * 1024))
+    const r = await writeZip(dest, 'S/B.part1.zip', [{ absPath: join(src, 'big.bin'), name: 'big.bin', mtimeMs: Date.now() }], 0, { finalize: false })
+    await splitIntoChunks(dest, r.tempRel!, 'S/B.part1.zip', 1024 * 1024)
+    const old = await snapshot(root)
+    await writeFile(join(src, 'big.bin'), randomBytes(3 * 1024 * 1024)) // the file changes
+    return { src, dest, root, old }
+  }
+
+  test('cancel while splitting leaves the previous pieces untouched', async () => {
+    const { src, dest, root, old } = await oldSet()
+    const r = await writeZip(dest, 'S/B.part1.zip', [{ absPath: join(src, 'big.bin'), name: 'big.bin', mtimeMs: Date.now() }], 0, { finalize: false })
+    const ac = new AbortController()
+    let writes = 0
+    const watching = new (class extends FsDestination {
+      override async writeStream(rel: string): Promise<NodeJS.WritableStream> {
+        if (rel.includes('.bm-partial') && ++writes === 2) ac.abort()
+        return super.writeStream(rel)
+      }
+    })(root)
+    await expect(splitIntoChunks(watching, r.tempRel!, 'S/B.part1.zip', 1024 * 1024, ac.signal)).rejects.toThrow()
+    expect(await snapshot(root)).toEqual(old)
+  })
+
+  test('a write error while splitting leaves the previous pieces untouched', async () => {
+    const { src, root, old } = await oldSet()
+    let writes = 0
+    const failing = new (class extends FsDestination {
+      override async writeStream(rel: string): Promise<NodeJS.WritableStream> {
+        if (rel.includes('.bm-partial') && ++writes === 3) throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })
+        return super.writeStream(rel)
+      }
+    })(root)
+    const r = await writeZip(failing, 'S/B.part1.zip', [{ absPath: join(src, 'big.bin'), name: 'big.bin', mtimeMs: Date.now() }], 0, { finalize: false })
+    await expect(splitIntoChunks(failing, r.tempRel!, 'S/B.part1.zip', 1024 * 1024)).rejects.toThrow('ENOSPC')
+    expect(await snapshot(root)).toEqual(old)
+  })
 })
