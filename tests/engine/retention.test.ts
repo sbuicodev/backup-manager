@@ -83,3 +83,20 @@ test('applyRetention in mirror mode purges expired trash', async () => {
     'S/current/c.txt': 'c'
   })
 })
+
+test('applyRetention prunes every part and chunk of an old split snapshot as one snapshot', async () => {
+  const root = await tmpDir()
+  const old = formatTimestamp(ago(40))
+  const recent = formatTimestamp(ago(1))
+  await makeTree(root, {
+    [`S/${old}.part1.zip`]: '1',
+    [`S/${old}.part2.zip.001`]: '2a',
+    [`S/${old}.part2.zip.002`]: '2b',
+    [`S/${recent}/a.txt`]: 'keep'
+  })
+  const source = { ...newSource('/src', 'S', []), mode: 'snapshot' as const }
+  source.snapshot = { keepMin: 1, maxAgeDays: 30 }
+  const r = await applyRetention(new FsDestination(root), source, now)
+  expect(r.pruned).toBe(1)
+  expect(await readTree(root)).toEqual({ [`S/${recent}/a.txt`]: 'keep' })
+})

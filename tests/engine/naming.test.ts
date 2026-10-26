@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+  snapshotKey,
   formatTimestamp,
   parseSnapshotName,
   uniqueTimestampName
@@ -31,7 +32,34 @@ test.each([
 })
 
 test('uniqueTimestampName skips names taken as dir, zip or partial', () => {
-  expect(uniqueTimestampName('T', new Set())).toBe('T')
-  expect(uniqueTimestampName('T', new Set(['T.zip']))).toBe('T-2')
-  expect(uniqueTimestampName('T', new Set(['T', 'T-2.bm-partial']))).toBe('T-3')
+  const T = '2026-10-25_165200'
+  expect(uniqueTimestampName(T, new Set())).toBe(T)
+  expect(uniqueTimestampName(T, new Set([`${T}.zip`]))).toBe(`${T}-2`)
+  expect(uniqueTimestampName(T, new Set([T, `${T}-2.bm-partial`]))).toBe(`${T}-3`)
+})
+
+test('snapshotKey groups every file of a snapshot under one key', () => {
+  const d = new Date(2026, 9, 25, 16, 52, 0)
+  for (const name of [
+    '2026-10-25_165200-2',
+    '2026-10-25_165200-2.zip',
+    '2026-10-25_165200-2.part3.zip',
+    '2026-10-25_165200-2.part3.zip.007'
+  ]) {
+    expect(snapshotKey(name)).toEqual({ key: '2026-10-25_165200-2', date: d })
+  }
+  expect(snapshotKey('2026-10-25_165200.part1.zip')?.key).toBe('2026-10-25_165200')
+  for (const bad of [
+    '2026-10-25_165200.part.zip',
+    '2026-10-25_165200.zip.001',
+    '2026-10-25_165200.bm-partial',
+    '2026-10-25_165200.part1.zip.1'
+  ]) {
+    expect(snapshotKey(bad)).toBeNull()
+  }
+})
+
+test('uniqueTimestampName treats a split snapshot as taken', () => {
+  const T = '2026-10-25_165200'
+  expect(uniqueTimestampName(T, new Set([`${T}.part1.zip`, `${T}.part2.zip.001`]))).toBe(`${T}-2`)
 })

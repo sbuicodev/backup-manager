@@ -1,6 +1,6 @@
 import type { Source } from '@shared/schema'
 import type { Destination } from './destination'
-import { parseSnapshotName } from './naming'
+import { parseSnapshotName, snapshotKey } from './naming'
 
 const DAY = 86_400_000
 
@@ -46,25 +46,32 @@ export async function applyRetention(
   now: Date
 ): Promise<{ pruned: number }> {
   const base = source.slug
-  const [dir, names] =
-    source.mode === 'snapshot'
-      ? [
-          base,
-          selectSnapshotsToPrune(
-            dated(await dest.list(base)),
-            source.snapshot.keepMin,
-            source.snapshot.maxAgeDays,
-            now
-          )
-        ]
-      : [
-          `${base}/.trash`,
-          selectTrashToPurge(
-            dated((await dest.list(`${base}/.trash`)).filter((e) => e.isDir)),
-            source.mirror.trashRetentionDays,
-            now
-          )
-        ]
-  for (const name of names) await dest.remove(`${dir}/${name}`)
+  if (source.mode === 'snapshot') {
+    // A snapshot can be several entries (a folder, a zip, or parts and chunks): group by key.
+    const groups = new Map<string, { date: Date; names: string[] }>()
+    for (const e of await dest.list(base)) {
+      const k = snapshotKey(e.name)
+      if (!k) continue
+      const g = groups.get(k.key) ?? { date: k.date, names: [] }
+      g.names.push(e.name)
+      groups.set(k.key, g)
+    }
+    const prune = selectSnapshotsToPrune(
+      [...groups].map(([key, g]) => ({ name: key, date: g.date })),
+      source.snapshot.keepMin,
+      source.snapshot.maxAgeDays,
+      now
+    )
+    for (const key of prune) {
+      for (const name of groups.get(key)!.names) await dest.remove(`${base}/${name}`)
+    }
+    return { pruned: prune.length }
+  }
+  const names = selectTrashToPurge(
+    dated((await dest.list(`${base}/.trash`)).filter((e) => e.isDir)),
+    source.mirror.trashRetentionDays,
+    now
+  )
+  for (const name of names) await dest.remove(`${base}/.trash/${name}`)
   return { pruned: names.length }
 }
