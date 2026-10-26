@@ -63,3 +63,7 @@ test('uniqueTimestampName treats a split snapshot as taken', () => {
   const T = '2026-10-25_165200'
   expect(uniqueTimestampName(T, new Set([`${T}.part1.zip`, `${T}.part2.zip.001`]))).toBe(`${T}-2`)
 })
+
+test('snapshotKey accepts piece numbers of 1000 and more', () => {
+  expect(snapshotKey('2026-10-25_165200.part1.zip.1000')?.key).toBe('2026-10-25_165200')
+})

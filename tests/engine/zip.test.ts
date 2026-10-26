@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import yauzl from 'yauzl'
 import { FsDestination } from '../../src/main/engine/destination'
+import { partSize } from '../../src/main/engine/packaging/parts'
 import {
   readZipEntryCount,
   splitIntoChunks,
@@ -240,4 +241,52 @@ describe('chunked parts', () => {
     await expect(p).rejects.toMatchObject({ name: 'AbortError' })
     expect(await dest.list('S')).toEqual([])
   })
+})
+
+describe('part size budget', () => {
+  test.each([
+    ['empty files, level 0', 0, 0],
+    ['10-byte files, level 6', 10, 6],
+    ['1 KB files, level 0', 1024, 0],
+    ['1 KB files, level 6', 1024, 6]
+  ])(
+    'real archive never exceeds partSize: %s',
+    { timeout: 60_000 },
+    async (_label, size, level) => {
+      const src = await tmpDir()
+      const root = await tmpDir()
+      const files = []
+      for (let i = 0; i < 2000; i++) {
+        const rel = `dir-${i % 7}/file-${i}.bin`
+        await mkdir(join(src, `dir-${i % 7}`), { recursive: true })
+        await writeFile(join(src, rel), randomBytes(size))
+        files.push({ rel, size, mtimeMs: Date.now() })
+      }
+      await writeZip(
+        new FsDestination(root),
+        'x.zip',
+        files.map((f) => ({ absPath: join(src, f.rel), name: f.rel, mtimeMs: f.mtimeMs })),
+        level,
+        {}
+      )
+      expect((await stat(join(root, 'x.zip'))).size).toBeLessThanOrEqual(partSize(files))
+    }
+  )
+})
+
+test('splitIntoChunks removes a stale 4-digit piece', async () => {
+  const src = await tmpDir()
+  const root = await tmpDir()
+  await writeFile(join(src, 'big.bin'), randomBytes(3 * 1024 * 1024))
+  const dest = new FsDestination(root)
+  await dest.writeTextAtomic('S/B.part1.zip.1000', 'old')
+  const r = await writeZip(
+    dest,
+    'S/B.part1.zip',
+    [{ absPath: join(src, 'big.bin'), name: 'big.bin', mtimeMs: Date.now() }],
+    0,
+    { finalize: false }
+  )
+  await splitIntoChunks(dest, r.tempRel!, 'S/B.part1.zip', 1024 * 1024)
+  expect((await dest.list('S')).map((e) => e.name)).not.toContain('B.part1.zip.1000')
 })

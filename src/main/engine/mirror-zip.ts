@@ -26,7 +26,7 @@ import { splitIntoChunks, writeZip } from './packaging/zip'
 type ManifestV2 = { version: 2; archives: Record<string, ManifestArchive> }
 
 /** Archive files in `current/`: B.zip, B.partN.zip and their .NNN chunks. */
-const ARCHIVE_FILE = /\.zip(\.\d{3})?$/
+const ARCHIVE_FILE = /\.zip(\.\d{3,})?$/
 
 async function readManifest(ctx: JobContext, rel: string): Promise<ManifestV2> {
   try {
@@ -121,7 +121,7 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
         if (
           pw.part.chunked &&
           (pw.write
-            ? new RegExp(`^${escape(file)}\\.\\d{3}$`).test(name)
+            ? new RegExp(`^${escape(file)}\\.\\d{3,}$`).test(name)
             : partFiles(w.target.base, pw.prev!).includes(name))
         )
           return true
@@ -137,7 +137,7 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
   // The archive a stale file belonged to: from the previous manifest, else from its name.
   const baseOf = (name: string): string =>
     Object.keys(manifest.archives).find((b) => ownsFile(b, name)) ??
-    name.replace(/(\.part\d+)?\.zip(\.\d{3})?$/, '')
+    name.replace(/(\.part\d+)?\.zip(\.\d{3,})?$/, '')
   const stale = emptySource
     ? []
     : existing.filter((name) => !owned(name) && !coversUnreadable(baseOf(name), []))

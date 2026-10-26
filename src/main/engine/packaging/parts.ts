@@ -14,12 +14,17 @@ export type ManifestArchive = { limit: number | null; parts: ManifestPart[] }
 
 const MTIME_TOLERANCE_MS = 2000
 const END_RECORDS = 22 + 20 + 56
+/**
+ * Per-entry bytes yazl writes besides the data and the two copies of the name: local header,
+ * data descriptor, central record, extended-timestamp and zip64 extras (measured, rounded up).
+ */
+const ENTRY_OVERHEAD = 170
 
 const byRel = (a: FileEntry, b: FileEntry): number => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0)
 
 function entrySize(f: FileEntry): number {
   // Stored bytes + zlib's worst-case deflate expansion + headers/central directory/zip64 extras.
-  return f.size + 5 * Math.ceil(f.size / 16384) + 6 + 76 + 2 * Buffer.byteLength(f.rel)
+  return f.size + 5 * Math.ceil(f.size / 16384) + 6 + ENTRY_OVERHEAD + 2 * Buffer.byteLength(f.rel)
 }
 
 /** Upper bound of the zip size for these files (spec §3.2). */
@@ -93,7 +98,15 @@ export function packStable(
       const changed: FileEntry[] = []
       for (const old of p.files) {
         const f = current.get(old.rel)
-        if (!f || isOversized(f, limit)) continue
+        if (!f) continue
+        if (isOversized(f, limit)) {
+          // An own-part oversized file stays where it is; anything else oversized moves out.
+          if (!zip.chunk && p.files.length === 1) {
+            part.files.push(f)
+            placed.add(f.rel)
+          }
+          continue
+        }
         if (unchanged(old, f)) {
           part.files.push(f)
           placed.add(f.rel)
@@ -163,6 +176,6 @@ const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 export function ownsFile(base: string, name: string): boolean {
   return (
     name === `${base}.zip` ||
-    new RegExp(`^${escapeRe(base)}\\.part\\d+\\.zip(\\.\\d{3})?$`).test(name)
+    new RegExp(`^${escapeRe(base)}\\.part\\d+\\.zip(\\.\\d{3,})?$`).test(name)
   )
 }

@@ -177,7 +177,7 @@ export async function splitIntoChunks(
       written.push(name)
     }
     const keep = new Set(written)
-    const stale = new RegExp(`^${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.\\d{3}$`)
+    const stale = new RegExp(`^${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.\\d{3,}$`)
     for (const e of await dest.list(dir)) {
       if (!e.isDir && stale.test(e.name) && !keep.has(e.name)) await dest.remove(inDir(e.name))
     }

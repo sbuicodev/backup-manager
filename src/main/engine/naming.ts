@@ -11,7 +11,7 @@ export function formatTimestamp(d: Date): string {
 }
 
 const SNAPSHOT =
-  /^((\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})(?:-\d+)?)(?:\.zip|\.part\d+\.zip(?:\.\d{3})?)?$/
+  /^((\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})(?:-\d+)?)(?:\.zip|\.part\d+\.zip(?:\.\d{3,})?)?$/
 
 /**
  * The snapshot a file or folder at the top of `<slug>/` belongs to: `TS`/`TS-N`, optionally

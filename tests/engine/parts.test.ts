@@ -30,8 +30,8 @@ const asPrev = (parts: PartPlan[], limit: number | null): ManifestArchive => ({
 describe('partSize', () => {
   test('matches the spec formula', () => {
     expect(partSize([])).toBe(98)
-    expect(partSize([f('ab', 100)])).toBe(98 + 100 + 5 + 6 + 76 + 4)
-    expect(partSize([f('é', 16384 * 2)])).toBe(98 + 32768 + 10 + 6 + 76 + 4)
+    expect(partSize([f('ab', 100)])).toBe(98 + 100 + 5 + 6 + 170 + 4)
+    expect(partSize([f('é', 16384 * 2)])).toBe(98 + 32768 + 10 + 6 + 170 + 4)
   })
   test('isOversized', () => {
     expect(isOversized(f('a', 10 * MB), 10 * MB)).toBe(true)
@@ -175,4 +175,17 @@ test('names', () => {
   ).toBe(false)
   expect(ownsFile('a.b+c', 'a.b+c.part1.zip')).toBe(true)
   expect(ownsFile('a.b+c', 'aXb+c.zip')).toBe(false)
+})
+
+test('packStable keeps an unchanged oversized own-part file in its part', () => {
+  const L = 10 * MB
+  const files = [f('a', 3 * MB), f('big', 30 * MB), f('c', 3 * MB), f('d', 5 * MB)]
+  const fresh = packFresh(files, zip(L))
+  expect(rels(fresh)).toEqual({ 1: ['a', 'c'], 2: ['big'], 3: ['d'] })
+  expect(rels(packStable(files, asPrev(fresh, L), zip(L)))).toEqual(rels(fresh))
+})
+
+test('names with 1000+ pieces are still recognised', () => {
+  expect(chunkName('B.part1.zip', 1000)).toBe('B.part1.zip.1000')
+  expect(ownsFile('B', 'B.part1.zip.1000')).toBe(true)
 })

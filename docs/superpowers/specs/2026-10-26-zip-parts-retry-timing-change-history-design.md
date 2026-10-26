@@ -94,11 +94,11 @@ sizes:
 partSize(files) = 22 + 20 + 56                        (end records incl. zip64, always counted)
                   + Σ over files ( size
                                    + 5 · ceil(size / 16384) + 6   (deflate worst-case expansion)
-                                   + 76 + 2 · byteLength(utf8 name) )
+                                   + 170 + 2 · byteLength(utf8 name) )
 ```
 
-(76 bytes ≈ local header + central directory record + data descriptor + zip64 extra fields per
-entry; the deflate term is zlib's documented worst case for incompressible input.) A file
+(170 bytes ≥ what yazl writes per entry besides data and names — local header, data descriptor,
+central record, extended-timestamp and zip64 extras, measured; the deflate term is zlib's documented worst case for incompressible input.) A file
 "fits" a part when `partSize(part ∪ {file}) ≤ limit`; a file is *oversized* when
 `partSize({file}) > limit`. A part written under this budget therefore never exceeds `limit`,
 even for incompressible data; well-compressing data simply produces smaller parts.
