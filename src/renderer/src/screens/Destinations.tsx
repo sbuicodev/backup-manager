@@ -33,6 +33,7 @@ import {
   TableRow
 } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { SizeInput } from '@/components/SizeInput'
 import { api } from '@/lib/api'
 import type { UseConfig } from '@/hooks/useConfig'
 
@@ -64,6 +65,8 @@ function DestinationDialog({
 }): React.JSX.Element {
   const [name, setName] = useState(initial?.name ?? '')
   const [path, setPath] = useState(initial?.path ?? '')
+  const [zipLimit, setZipLimit] = useState(initial?.zipPartLimitBytes ?? null)
+  const [forceChunk, setForceChunk] = useState(initial?.forceChunkOversized ?? false)
   const browse = async (): Promise<void> => {
     const p = await api.dialog.pickFolder()
     if (p) {
@@ -72,7 +75,13 @@ function DestinationDialog({
     }
   }
   const submit = async (): Promise<void> => {
-    const d = initial ? { ...initial, name: name.trim(), path } : newDestination(path, name.trim())
+    const d = {
+      ...(initial ?? newDestination(path, name.trim())),
+      name: name.trim(),
+      path,
+      zipPartLimitBytes: zipLimit,
+      forceChunkOversized: forceChunk
+    }
     if (await onSave(d)) onClose()
   }
   return (
@@ -99,6 +108,22 @@ function DestinationDialog({
             <Label htmlFor="dest-name">Name</Label>
             <Input id="dest-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
+          <div className="grid gap-2">
+            <Label>Limit zip parts to</Label>
+            <SizeInput
+              value={zipLimit}
+              onChange={setZipLimit}
+              offLabel="No limit (use each source's setting)"
+              defaultBytes={4095 * 1024 ** 2}
+            />
+            <p className="text-muted-foreground text-xs">
+              FAT32 drives can&apos;t store files of 4 GB or more — use 4095 MB.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Switch checked={forceChunk} onCheckedChange={setForceChunk} />
+            Always split files larger than the limit into chunks
+          </label>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

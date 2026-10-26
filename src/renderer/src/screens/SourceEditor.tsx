@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import { SizeInput } from '@/components/SizeInput'
 import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
@@ -291,6 +292,49 @@ export function SourceEditor({
                     <SelectItem value="bundle">All together in _files.zip</SelectItem>
                   </SelectContent>
                 </Select>
+              </Field>
+            )}
+            {zip && (
+              <Field
+                label="Split archives larger than"
+                hint="Each part is a complete zip that opens on its own. Destinations can set a smaller limit."
+              >
+                <SizeInput
+                  value={s.zip.partLimitBytes}
+                  onChange={(partLimitBytes) => patch({ zip: { ...s.zip, partLimitBytes } })}
+                  offLabel="Never split"
+                  defaultBytes={2 * 1024 ** 3}
+                />
+              </Field>
+            )}
+            {zip && s.zip.partLimitBytes !== null && (
+              <Field label="Files larger than the limit">
+                <Select
+                  value={s.zip.oversized}
+                  onValueChange={(v) =>
+                    patch({ zip: { ...s.zip, oversized: v as Source['zip']['oversized'] } })
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="own-part">Keep whole in their own part</SelectItem>
+                    <SelectItem value="chunk">
+                      Split into raw chunks (.001, .002… — open with 7-Zip or join)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+            {zip && s.zip.partLimitBytes !== null && s.zip.oversized === 'chunk' && (
+              <Field label="Chunk size">
+                <SizeInput
+                  value={s.zip.chunkBytes}
+                  onChange={(chunkBytes) => patch({ zip: { ...s.zip, chunkBytes } })}
+                  offLabel="Same as the limit"
+                  defaultBytes={s.zip.partLimitBytes}
+                />
               </Field>
             )}
           </Section>
