@@ -35,11 +35,17 @@ export const SettingsSchema = z.object({
   skipScheduledOnBattery: z.boolean()
 })
 
+/** Smallest allowed zip part limit or chunk size: 1 MiB. */
+export const MIN_PART_BYTES = 1_048_576
+const PartBytes = z.number().int().min(MIN_PART_BYTES).nullable()
+
 export const DestinationSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   path: AbsolutePath,
-  enabled: z.boolean()
+  enabled: z.boolean(),
+  zipPartLimitBytes: PartBytes.default(null),
+  forceChunkOversized: z.boolean().default(false)
 })
 
 export const SourceSchema = z.object({
@@ -52,7 +58,10 @@ export const SourceSchema = z.object({
   packaging: z.enum(['copy', 'zip-whole', 'zip-children']),
   zip: z.object({
     level: z.number().int().min(0).max(9),
-    looseFiles: z.enum(['individual', 'bundle'])
+    looseFiles: z.enum(['individual', 'bundle']),
+    partLimitBytes: PartBytes.default(null),
+    oversized: z.enum(['own-part', 'chunk']).default('own-part'),
+    chunkBytes: PartBytes.default(null)
   }),
   mirror: z.object({
     deletion: z.enum(['trash', 'exact', 'never']),
@@ -178,7 +187,13 @@ export function newSource(path: string, name: string, existingSlugs: string[]): 
     enabled: true,
     mode: 'mirror',
     packaging: 'copy',
-    zip: { level: 6, looseFiles: 'individual' },
+    zip: {
+      level: 6,
+      looseFiles: 'individual',
+      partLimitBytes: null,
+      oversized: 'own-part',
+      chunkBytes: null
+    },
     mirror: { deletion: 'trash', trashRetentionDays: null },
     snapshot: { keepMin: 10, maxAgeDays: null },
     excludes: [],
@@ -190,7 +205,14 @@ export function newSource(path: string, name: string, existingSlugs: string[]): 
 }
 
 export function newDestination(path: string, name: string): Destination {
-  return { id: crypto.randomUUID(), name, path, enabled: true }
+  return {
+    id: crypto.randomUUID(),
+    name,
+    path,
+    enabled: true,
+    zipPartLimitBytes: null,
+    forceChunkOversized: false
+  }
 }
 
 export function validateConfig(
@@ -201,5 +223,20 @@ export function validateConfig(
   return {
     ok: false,
     errors: r.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+  }
+}
+
+export type EffectiveZip = { limit: number | null; chunk: boolean; chunkSize: number | null }
+
+/** Part limit, chunking and chunk size for one source × destination job (smaller limit wins). */
+export function effectiveZipSettings(source: Source, dest: Destination): EffectiveZip {
+  const limits = [source.zip.partLimitBytes, dest.zipPartLimitBytes].filter(
+    (n): n is number => n !== null
+  )
+  const limit = limits.length > 0 ? Math.min(...limits) : null
+  return {
+    limit,
+    chunk: source.zip.oversized === 'chunk' || dest.forceChunkOversized,
+    chunkSize: limit === null ? null : Math.min(source.zip.chunkBytes ?? limit, limit)
   }
 }

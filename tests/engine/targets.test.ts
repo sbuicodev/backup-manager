@@ -9,7 +9,7 @@ const src = (
   looseFiles: 'individual' | 'bundle' = 'individual'
 ): Source => {
   const s = newSource('/s', 'Stuff', [])
-  return { ...s, packaging, zip: { level: 6, looseFiles } }
+  return { ...s, packaging, zip: { ...s.zip, level: 6, looseFiles } }
 }
 const shape = (targets: ReturnType<typeof computeZipTargets>): Record<string, string[]> =>
   Object.fromEntries(targets.map((t) => [t.name, t.files.map((x) => x.rel)]))

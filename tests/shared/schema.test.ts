@@ -6,7 +6,10 @@ import {
   newSource,
   slugify,
   validateConfig,
-  type Config
+  effectiveZipSettings,
+  type Config,
+  type Destination,
+  type Source
 } from '@shared/schema'
 
 function errorsOf(cfg: unknown): string[] {
@@ -196,4 +199,103 @@ describe('slug and path safety', () => {
       expect(errorsOf(cfg)).toEqual([])
     }
   )
+})
+
+describe('zip part limits', () => {
+  const MB = 1024 ** 2
+  const GB = 1024 ** 3
+
+  test('a config written before zip limits existed still loads, with defaults', () => {
+    const old = defaultConfig() as unknown as {
+      destinations: unknown[]
+      sources: Record<string, unknown>[]
+    }
+    old.destinations.push({ id: 'd', name: 'D', path: '/d', enabled: true })
+    const s = { ...newSource('/a', 'A', []) } as Record<string, unknown>
+    s.zip = { level: 6, looseFiles: 'individual' }
+    old.sources.push(s)
+    const r = validateConfig(old)
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.config.sources[0].zip).toEqual({
+        level: 6,
+        looseFiles: 'individual',
+        partLimitBytes: null,
+        oversized: 'own-part',
+        chunkBytes: null
+      })
+      expect(r.config.destinations[0]).toMatchObject({
+        zipPartLimitBytes: null,
+        forceChunkOversized: false
+      })
+    }
+  })
+
+  test('newSource and newDestination carry the defaults', () => {
+    expect(newSource('/a', 'A', []).zip).toMatchObject({
+      partLimitBytes: null,
+      oversized: 'own-part',
+      chunkBytes: null
+    })
+    expect(newDestination('/d', 'D')).toMatchObject({
+      zipPartLimitBytes: null,
+      forceChunkOversized: false
+    })
+  })
+
+  test.each([0, 1024, MB - 1])('rejects sizes below 1 MiB (%i)', (n) => {
+    const a = cfgWith((c) => {
+      const s = newSource('/a', 'A', [])
+      s.zip.partLimitBytes = n
+      c.sources.push(s)
+    })
+    const b = cfgWith((c) => {
+      const s = newSource('/a', 'A', [])
+      s.zip.chunkBytes = n
+      c.sources.push(s)
+    })
+    const d = cfgWith((c) =>
+      c.destinations.push({ ...newDestination('/d', 'D'), zipPartLimitBytes: n })
+    )
+    expect(errorsOf(a).length).toBeGreaterThan(0)
+    expect(errorsOf(b).length).toBeGreaterThan(0)
+    expect(errorsOf(d).length).toBeGreaterThan(0)
+  })
+
+  test('effectiveZipSettings combines source and destination', () => {
+    const base = newSource('/a', 'A', [])
+    const src = (p: Partial<Source['zip']>): Source => ({ ...base, zip: { ...base.zip, ...p } })
+    const dst = (p: Partial<Destination>): Destination => ({ ...newDestination('/d', 'D'), ...p })
+    expect(effectiveZipSettings(src({}), dst({}))).toEqual({
+      limit: null,
+      chunk: false,
+      chunkSize: null
+    })
+    expect(
+      effectiveZipSettings(src({ partLimitBytes: 2 * GB }), dst({ zipPartLimitBytes: GB }))
+    ).toEqual({
+      limit: GB,
+      chunk: false,
+      chunkSize: GB
+    })
+    expect(
+      effectiveZipSettings(
+        src({ partLimitBytes: 2 * GB, oversized: 'chunk', chunkBytes: 3 * GB }),
+        dst({})
+      )
+    ).toEqual({ limit: 2 * GB, chunk: true, chunkSize: 2 * GB })
+    expect(
+      effectiveZipSettings(
+        src({ partLimitBytes: 2 * GB, chunkBytes: 100 * MB }),
+        dst({ forceChunkOversized: true })
+      )
+    ).toEqual({ limit: 2 * GB, chunk: true, chunkSize: 100 * MB })
+    expect(
+      effectiveZipSettings(src({}), dst({ zipPartLimitBytes: GB, forceChunkOversized: true }))
+    ).toEqual({
+      limit: GB,
+      chunk: true,
+      chunkSize: GB
+    })
+  })
 })
