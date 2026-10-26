@@ -34,6 +34,19 @@ export function trayStatusLine(
   return `Idle · next: ${name} at ${shortTime(new Date(next.at), now)}${retries}`
 }
 
+export type TrayAction = 'run-all' | 'cancel' | 'pause-hour' | 'pause-forever' | 'resume'
+
+/** Tray menu actions for the current state, between the status line and Open/Quit. */
+export function trayActions(status: SchedulerStatus): TrayAction[] {
+  return [
+    'run-all',
+    ...(status.active ? (['cancel'] as const) : []),
+    ...(status.pausedUntil !== null
+      ? (['resume'] as const)
+      : (['pause-hour', 'pause-forever'] as const))
+  ]
+}
+
 export function shouldNotify(setting: Settings['notifications'], status: RunStatus): boolean {
   if (setting === 'always') return true
   if (setting === 'never') return false

@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'vitest'
 import { defaultConfig, newDestination, newSource, type Settings } from '@shared/schema'
 import type { RunStatus, SchedulerStatus } from '@shared/types'
-import { linuxAutostartEntry, shouldNotify, trayStatusLine } from '../../src/main/os-helpers'
+import {
+  linuxAutostartEntry,
+  shouldNotify,
+  trayActions,
+  trayStatusLine
+} from '../../src/main/os-helpers'
 
 const now = new Date(2026, 9, 26, 10, 0) // Monday
 function cfg(): ReturnType<typeof defaultConfig> {
@@ -98,4 +103,24 @@ test('linuxAutostartEntry', () => {
   expect(linuxAutostartEntry('/opt/Backup Manager/backup-manager')).toBe(
     '[Desktop Entry]\nType=Application\nName=Backup Manager\nExec="/opt/Backup Manager/backup-manager" --hidden\nX-GNOME-Autostart-enabled=true\n'
   )
+})
+
+describe('trayActions', () => {
+  const idle: SchedulerStatus = {
+    active: null,
+    pending: [],
+    pausedUntil: null,
+    nextRuns: [],
+    pendingRetries: []
+  }
+  test('idle: run, pause options', () => {
+    expect(trayActions(idle)).toEqual(['run-all', 'pause-hour', 'pause-forever'])
+  })
+  test('running: cancel comes right after run all', () => {
+    const running = { ...idle, active: { id: 'r', trigger: 'manual' as const, jobs: [] } }
+    expect(trayActions(running)).toEqual(['run-all', 'cancel', 'pause-hour', 'pause-forever'])
+  })
+  test('paused: resume instead of pause', () => {
+    expect(trayActions({ ...idle, pausedUntil: 'forever' })).toEqual(['run-all', 'resume'])
+  })
 })

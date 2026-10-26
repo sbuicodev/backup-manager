@@ -296,7 +296,8 @@ export class Scheduler {
     const js = this.job(key)
     const now = this.deps.now().toISOString()
     js.lastAttemptAt = now
-    if (r.status === 'completed' || r.status === 'completed-with-warnings') {
+    const succeeded = r.status === 'completed' || r.status === 'completed-with-warnings'
+    if (succeeded) {
       js.lastSuccessAt = now
       clearRetry(js)
     } else if (r.reason && RETRY_REASONS.has(r.reason) && run.trigger !== 'manual') {
@@ -307,7 +308,9 @@ export class Scheduler {
         js.nextRetryAt = new Date(this.deps.now().getTime() + RETRY_STEP_MS).toISOString()
       }
     }
-    if (this.state.activeRun) {
+    // Only a success leaves the interrupted-run record: after a crash, every job of the run
+    // that did not succeed is re-run as recovery (spec §7.6).
+    if (this.state.activeRun && succeeded) {
       this.state.activeRun.jobs = this.state.activeRun.jobs.filter((k) => k !== key)
     }
     void this.save()

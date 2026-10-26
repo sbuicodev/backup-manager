@@ -183,7 +183,7 @@ describe('mirror zip parts', () => {
     expect(await contents(ch.current, await tmpDir())).toEqual(await sourceFiles(ch.src))
     const again = await run(ch)
     expect(again.counts.zipped).toBe(0)
-  })
+  }, 30_000) // writes and reads back several MiB: ~3 s alone, more under a loaded parallel run
 
   test('limit switched off: parts become S.zip and old parts are trashed', async () => {
     const w = await world({ a: 400 * KB, b: 400 * KB, c: 400 * KB }, MB)

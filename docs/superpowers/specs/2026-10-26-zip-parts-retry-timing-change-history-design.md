@@ -133,7 +133,8 @@ Assignment for one archive, given its current source files and the previous mani
    the budget, else it is removed and treated as new.
 3. New files (sorted by path) go into the highest-numbered non-chunked part if they fit, else
    into a new part `max(n)+1`. Oversized files always get a new part of their own (chunked if
-   `chunk`).
+   `chunk`); an oversized file already alone in its own part (or in its own chunked part, with
+   `chunk` still on) stays in that part, so it is not rewritten while it is unchanged.
 4. Merge: a non-chunked part whose `partSize` is below `limit / 2` is merged into the next
    non-chunked part (by number) if the result fits; the merged part keeps the lower number.
    Repeat until no merge applies.
@@ -149,9 +150,15 @@ never removes or rewrites anything.
 ### 3.4 Snapshot mode
 
 Snapshots pack from scratch every run: files sorted by path fill part 1, then part 2, …;
-oversized files get their own part (chunked if `chunk`) in path order. Layout under the snapshot
+oversized files get their own part (chunked if `chunk`) in path order, and the part being
+filled before an oversized file keeps filling after it (fewer parts). Layout under the snapshot
 follows §3.1 (`<ts>.zip` → `<ts>.part1.zip`… for zip-whole; `<ts>/B.part1.zip`… for
 zip-children).
+
+Split zip-whole parts are staged in `<ts>.bm-partial/` and moved to the top of `D/S/` only once
+all are written; if a move fails, the parts already moved are removed. Part 1 (its first chunk
+last of all) is moved last, so a set without part 1 can only be left by a crash: retention does
+not count it as a snapshot, and the next snapshot job deletes it.
 
 Retention (base spec §6.8) recognises `TS.partN.zip` and `TS.partN.zip.NNN` as belonging to
 snapshot `TS` and prunes all of a snapshot's files together.
@@ -161,8 +168,14 @@ snapshot `TS` and prunes all of a snapshot's files together.
 - Each part is written to its own `.bm-partial` sibling and verified (entry count, size > 0)
   before rename, as today.
 - A chunked part is written as one zip to a `.bm-partial` file, verified, then split into chunk
-  files (each written to its own `.bm-partial` and renamed); the unsplit temp file is removed.
-  If splitting fails, all chunk files of that part are removed.
+  files. All new chunks are written as `.bm-partial` files first; only when every one exists are
+  they renamed over the previous set (extra old chunks removed). If splitting fails, only the new
+  partial chunks are removed and the previous set stays intact. A crash during the final renames
+  can leave a mixed set; it no longer matches the manifest, so the next run rewrites it.
+- Mirror mode stages every changed part of an archive as a temp file before replacing any of
+  them. If any part cannot be written or committed, or a file cannot be read while writing a
+  part that already has a previous version, the archive keeps its previous manifest entry and
+  none of its old files are removed.
 - In mirror mode, the manifest is written after all parts of all archives, and only records
   parts that were successfully written (failed parts are retried next run, as today).
 
@@ -184,17 +197,23 @@ nextRetryAt: string | null     // ISO; default null = due now
   continue from where they were (a retry that fails again does not restart the sequence).
 - The 60 s scheduler tick is unchanged for everything else. For retries it only checks pairs with
   `pendingRetry && (nextRetryAt === null || nextRetryAt <= now)`:
-  - destination available → enqueue a `retry` run (as today); `nextRetryAt` stays as it is.
-  - still missing → `retryAttempts += 1`; `nextRetryAt = now + min(60 s × (retryAttempts + 1), 300 s)`.
-    Resulting checks: +1, +2, +3, +4, +5 min after the skip, then every 5 min.
-- `onResume` and `onPowerChange` set `nextRetryAt = now` and `retryAttempts = 0` for every
+  - every check, whatever it finds, advances the sequence: `retryAttempts += 1`;
+    `nextRetryAt = now + min(60 s × (retryAttempts + 1), 300 s)`. Resulting checks: +1, +2, +3,
+    +4, +5 min after the skip, then every 5 min. A retry run that finds the destination missing
+    again therefore waits its turn instead of being checked every minute.
+  - destination available → also enqueue a `retry` run (as today).
+  - a `nextRetryAt` more than 5 min in the future (the clock moved back) or not a valid date is
+    treated as due.
+- `onResume` and `onPowerChange` set `nextRetryAt = null` (due now) and `retryAttempts = 0` for every
   pending retry, then tick.
 - Clearing is unchanged: on success, or when the source's next regular slot runs (which also
   resets `retryAttempts`/`nextRetryAt`).
 
 ### 4.3 Status and UI
 
-- `SchedulerStatus.pendingRetries` items become `{ sourceId, destId, nextRetryAt: string | null }`.
+- `SchedulerStatus.pendingRetries` items become `{ sourceId, destId, nextRetryAt: string | null }`,
+  listing only pairs that can still retry (source enabled with retry on, destination enabled and
+  assigned to the source).
 - Run screen, last-run card: a job skipped or lost with a pending retry shows
   "Skipped — <destination> not available · retrying, next check HH:MM" (or "Failed — … ·
   retrying…" for `destination-lost`). Without a pending retry (manual run, retry disabled) it
@@ -232,7 +251,10 @@ What each job records:
 | mirror-copy | `added` (copied), `updated`, `trashed`/`deleted` per deletion policy |
 | mirror-zip | per rewritten part: files `added` (new to the archive), `updated` (size/mtime changed), `removed` (gone from the source) — computed from the v2 manifest; files only moved between parts by a merge or limit change are **not** listed |
 | snapshot (any packaging) | `added`/`updated`/`removed` compared with the previous successful snapshot of the same source × destination; the first snapshot lists every file as `added` |
-| all | `skipped` for every warning that concerns a path (symlink, unreadable, case conflict, per-file errno, kept archive) |
+| all | `skipped` for every warning that concerns a path (symlink, unreadable, case conflict, per-file errno). A warning about an archive (a part that failed, a kept archive) logs each source file it affects as `skipped`, with `archive` set; a kept archive lists the files whose change it does not carry |
+
+Files still in the source (or unreadable there) that could not be written are never logged as
+`removed`. An archive whose content became unreadable entirely stays in the manifest as it was.
 
 Snapshot comparison data: after each successful snapshot job, its file list (`rel`, `size`,
 `mtimeMs`) is saved to `<userData>/snapshot-index/<sourceId>__<destId>.json.gz`. A missing or

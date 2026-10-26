@@ -189,3 +189,20 @@ test('names with 1000+ pieces are still recognised', () => {
   expect(chunkName('B.part1.zip', 1000)).toBe('B.part1.zip.1000')
   expect(ownsFile('B', 'B.part1.zip.1000')).toBe(true)
 })
+
+test('packing a large library stays fast (linear, not quadratic)', () => {
+  const file = (i: number): FileEntry => ({
+    rel: `photos/${String(i).padStart(6, '0')}.jpg`,
+    size: 30_000,
+    mtimeMs: 0
+  })
+  const files = Array.from({ length: 60_000 }, (_, i) => file(i))
+  const zip = { limit: 1024 * 1024 * 1024, chunk: false, chunkSize: null }
+  const t = performance.now()
+  const parts = packFresh(files, zip)
+  const prev = { limit: zip.limit, parts: parts.map((p) => ({ ...p, fingerprint: '' })) }
+  const more = Array.from({ length: 60_000 }, (_, i) => file(60_000 + i))
+  const next = packStable([...files, ...more], prev, zip)
+  expect(performance.now() - t).toBeLessThan(2000)
+  expect(next.flatMap((p) => p.files)).toHaveLength(120_000)
+}, 120_000)

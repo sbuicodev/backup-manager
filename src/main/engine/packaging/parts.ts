@@ -47,10 +47,49 @@ function collapse(parts: PartPlan[], limit: number): PartPlan[] {
   return parts
 }
 
+/**
+ * Running byte budgets of parts being packed, so adding a file costs O(1) instead of re-summing
+ * the part (packing a large library would otherwise be quadratic).
+ */
+class Budgets {
+  private size = new Map<PartPlan, number>()
+  private big = new Set<PartPlan>() // parts holding an oversized file
+  constructor(private readonly limit: number) {}
+  of(p: PartPlan): number {
+    let n = this.size.get(p)
+    if (n === undefined) {
+      n = partSize(p.files)
+      this.size.set(p, n)
+      if (p.files.some((f) => isOversized(f, this.limit))) this.big.add(p)
+    }
+    return n
+  }
+  fits(p: PartPlan, f: FileEntry): boolean {
+    return this.of(p) + entrySize(f) <= this.limit
+  }
+  add(p: PartPlan, f: FileEntry): void {
+    this.size.set(p, this.of(p) + entrySize(f))
+    p.files.push(f)
+    if (isOversized(f, this.limit)) this.big.add(p)
+  }
+  /** Moves all of `b`'s files into `a`. */
+  merge(a: PartPlan, b: PartPlan): void {
+    this.size.set(a, this.of(a) + this.of(b) - END_RECORDS)
+    a.files.push(...b.files)
+    if (this.big.has(b)) this.big.add(a)
+  }
+  /** A part new files and merges may use: not chunked and without an oversized file. */
+  normal(p: PartPlan): boolean {
+    this.of(p)
+    return !p.chunked && !this.big.has(p)
+  }
+}
+
 /** Packs files in path order: parts fill up to the limit, oversized files get their own part. */
 export function packFresh(files: FileEntry[], zip: EffectiveZip): PartPlan[] {
   const { limit } = zip
   if (limit === null) return unsplit(files)
+  const budgets = new Budgets(limit)
   const parts: PartPlan[] = []
   let current: PartPlan | null = null
   for (const f of [...files].sort(byRel)) {
@@ -58,11 +97,11 @@ export function packFresh(files: FileEntry[], zip: EffectiveZip): PartPlan[] {
       parts.push({ n: parts.length + 1, chunked: zip.chunk, files: [f] })
       continue
     }
-    if (!current || partSize([...current.files, f]) > limit) {
+    if (!current || !budgets.fits(current, f)) {
       current = { n: parts.length + 1, chunked: false, files: [] }
       parts.push(current)
     }
-    current.files.push(f)
+    budgets.add(current, f)
   }
   return collapse(parts, limit)
 }
@@ -82,6 +121,7 @@ export function packStable(
   const { limit } = zip
   if (!prev || limit === null || prev.limit !== limit) return packFresh(files, zip)
 
+  const budgets = new Budgets(limit)
   const current = new Map(files.map((f) => [f.rel, f]))
   const placed = new Set<string>()
   const parts: PartPlan[] = []
@@ -91,7 +131,7 @@ export function packStable(
     if (p.chunked) {
       const f = current.get(p.files[0]?.rel ?? '')
       if (f && zip.chunk && isOversized(f, limit)) {
-        part.files.push(f)
+        budgets.add(part, f)
         placed.add(f.rel)
       }
     } else {
@@ -102,21 +142,21 @@ export function packStable(
         if (isOversized(f, limit)) {
           // An own-part oversized file stays where it is; anything else oversized moves out.
           if (!zip.chunk && p.files.length === 1) {
-            part.files.push(f)
+            budgets.add(part, f)
             placed.add(f.rel)
           }
           continue
         }
         if (unchanged(old, f)) {
-          part.files.push(f)
+          budgets.add(part, f)
           placed.add(f.rel)
         } else {
           changed.push(f)
         }
       }
       for (const f of changed) {
-        if (partSize([...part.files, f]) <= limit) {
-          part.files.push(f)
+        if (budgets.fits(part, f)) {
+          budgets.add(part, f)
           placed.add(f.rel)
         }
       }
@@ -124,34 +164,31 @@ export function packStable(
     if (part.files.length > 0) parts.push(part)
   }
 
-  const maxN = (): number => parts.reduce((m, p) => Math.max(m, p.n), 0)
+  let maxN = parts.reduce((m, p) => Math.max(m, p.n), 0)
+  // The highest-numbered part new files may join; it only moves forward as parts are added.
+  let last = parts.filter((p) => budgets.normal(p)).sort((a, b) => b.n - a.n)[0]
   for (const f of files.filter((x) => !placed.has(x.rel)).sort(byRel)) {
     if (isOversized(f, limit)) {
-      parts.push({ n: maxN() + 1, chunked: zip.chunk, files: [f] })
+      parts.push({ n: ++maxN, chunked: zip.chunk, files: [f] })
       continue
     }
-    const last = parts
-      .filter((p) => !p.chunked && !p.files.some((x) => isOversized(x, limit)))
-      .sort((a, b) => b.n - a.n)[0]
-    if (last && partSize([...last.files, f]) <= limit) last.files.push(f)
-    else parts.push({ n: maxN() + 1, chunked: false, files: [f] })
+    if (!last || !budgets.fits(last, f)) {
+      last = { n: ++maxN, chunked: false, files: [] }
+      parts.push(last)
+    }
+    budgets.add(last, f)
   }
 
   // Merge parts below half the limit into the next mergeable part, keeping the lower number.
-  let merged = true
-  while (merged) {
-    merged = false
-    const normal = parts
-      .filter((p) => !p.chunked && !p.files.some((x) => isOversized(x, limit)))
-      .sort((a, b) => a.n - b.n)
-    for (let i = 0; i < normal.length - 1; i++) {
-      const [a, b] = [normal[i], normal[i + 1]]
-      if (partSize(a.files) < limit / 2 && partSize([...a.files, ...b.files]) <= limit) {
-        a.files.push(...b.files)
-        parts.splice(parts.indexOf(b), 1)
-        merged = true
-        break
-      }
+  const normal = parts.filter((p) => budgets.normal(p)).sort((a, b) => a.n - b.n)
+  for (let i = 0; i < normal.length - 1;) {
+    const [a, b] = [normal[i], normal[i + 1]]
+    if (budgets.of(a) < limit / 2 && budgets.of(a) + budgets.of(b) - END_RECORDS <= limit) {
+      budgets.merge(a, b)
+      parts.splice(parts.indexOf(b), 1)
+      normal.splice(i + 1, 1)
+    } else {
+      i++
     }
   }
 

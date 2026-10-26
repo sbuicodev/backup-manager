@@ -30,6 +30,7 @@ async function harness(
   checks: Date[]
   outcome: (key: string, o: Outcome) => void
   crashOnRun: { value: boolean }
+  crashAfterJobs: { value: boolean }
   stateFile: string
   advance: (ms: number) => Promise<void>
 }> {
@@ -57,6 +58,7 @@ async function harness(
   const outcomes: Record<string, Outcome> = {}
   const runs: QueuedRun[] = []
   const crashOnRun = { value: false }
+  const crashAfterJobs = { value: false } // jobs end, then the run never finishes
   let tickFn: (() => void) | null = null
   let n = 0
   const deps: SchedulerDeps = {
@@ -88,6 +90,7 @@ async function harness(
         warnings: []
       }))
       for (const r of jobs) onJobEnd(r)
+      if (crashAfterJobs.value) return new Promise<RunLog>(() => {})
       return {
         id: run.id,
         trigger: run.trigger,
@@ -108,6 +111,7 @@ async function harness(
     avail,
     checks,
     crashOnRun,
+    crashAfterJobs,
     stateFile,
     outcome: (key, o) => {
       outcomes[key] = o
@@ -274,6 +278,28 @@ test('leftover activeRun on start → unfinished jobs re-enqueued as recovery', 
     ['recovery', [{ sourceId: 's0', destId: 'd1' }]]
   ])
   expect((await loadState(h.stateFile, h.cfg)).activeRun).toBeNull()
+})
+
+test('a job that failed before a crash is re-run on recovery; a successful one is not', async () => {
+  const h = await harness([null], { destCount: 2 })
+  await h.s.start()
+  h.outcome('s0:d0', { status: 'failed', reason: 'error' })
+  h.crashAfterJobs.value = true
+  h.s.runNow()
+  // Wait (up to 2 s) for both job ends to reach disk.
+  let persisted = await loadState(h.stateFile, h.cfg)
+  for (let i = 0; i < 100 && persisted.activeRun?.jobs.length !== 1; i++) {
+    await new Promise((r) => setTimeout(r, 20))
+    persisted = await loadState(h.stateFile, h.cfg)
+  }
+  expect(persisted.activeRun?.jobs).toEqual(['s0:d0'])
+  const h2 = await harness([null], { destCount: 2 })
+  await saveState(h2.stateFile, persisted)
+  await h2.s.start()
+  await h2.s.whenIdle()
+  expect(h2.runs.map((r) => [r.trigger, r.jobs])).toEqual([
+    ['recovery', [{ sourceId: 's0', destId: 'd0' }]]
+  ])
 })
 
 test('job finished before a crash is not re-run on recovery', async () => {

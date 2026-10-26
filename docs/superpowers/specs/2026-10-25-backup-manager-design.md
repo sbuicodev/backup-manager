@@ -263,8 +263,9 @@ run); the preview is informative, not a contract.
 - Diff source files against `current/`: a file is copied if missing or if size differs or
   mtime differs by more than 2 s (FAT/exFAT have 2 s resolution).
 - Copies preserve mtime (`fs.utimes`) so subsequent diffs are stable.
-- Each copy writes to `<name>.partial` in the same directory, verifies the size, then renames
-  over the target.
+- Each copy writes to a temporary sibling `.<hash>.bm-partial` in the same directory (a short
+  hashed name, so long file names never exceed name-length limits), verifies the size, then
+  renames over the target.
 - Files present in `current/` but not in the source (and not excluded) are handled per
   `deletion`: `trash` → moved under `.trash/<run timestamp>/`; `exact` → deleted; `never` →
   left alone. Empty directories left behind are removed (except under `never`).
@@ -279,16 +280,16 @@ run); the preview is informative, not a contract.
 
 ### 6.6 Snapshot
 
-- At the start of each job, stale `.partial` files/folders under `D/S/` (left by a crash,
+- At the start of each job, stale `.bm-partial` files/folders under `D/S/` (left by a crash,
   power loss or forced shutdown) are deleted. The same applies to mirror jobs.
-- Write into `<timestamp>.partial` (folder) or `<timestamp>.zip.partial` (file); rename to
-  the final name only when the whole snapshot completes. On failure or cancel, the
-  `.partial` is removed.
+- Write into `<timestamp>.bm-partial` (folder) or a `.bm-partial` sibling of `<timestamp>.zip`
+  (file); rename to the final name only when the whole snapshot completes. On failure or
+  cancel, the `.bm-partial` is removed.
 - Copies preserve mtime.
 
 ### 6.7 Zip writing
 
-- `yazl` streams files into the archive; output goes to `.partial` then is renamed.
+- `yazl` streams files into the archive; output goes to a `.bm-partial` sibling then is renamed.
 - Compression level from `zip.level` (0 = store). Entries keep relative paths and mtimes.
 - Verification: after writing, check the archive's size is non-zero and the entry count
   matches the planned count (read the central directory).
@@ -296,7 +297,7 @@ run); the preview is informative, not a contract.
 ### 6.8 Retention
 
 - Snapshots for a source at a destination are the finalized `<timestamp>` folders/zips
-  under `D/S/` (names that parse as timestamps; `.partial` and `.trash` ignored).
+  under `D/S/` (names that parse as timestamps; `.bm-partial` and `.trash` ignored).
 - Sort newest first. Always keep the first `keepMin`. Of the rest, delete those older than
   `maxAgeDays`. `maxAgeDays: null` → delete nothing.
 - Trash: subfolders of `.trash/` older than `trashRetentionDays` are deleted
@@ -307,7 +308,7 @@ run); the preview is informative, not a contract.
 - Per-file problems (locked, permission denied, vanished mid-run) → logged, file skipped,
   job ends as `completed-with-warnings`.
 - Fatal problems for a job (destination full `ENOSPC`, destination becomes unavailable,
-  zip write failure) → that job aborts as `failed`, its `.partial` outputs are cleaned up,
+  zip write failure) → that job aborts as `failed`, its `.bm-partial` outputs are cleaned up,
   the run continues with the next job.
 - Cancellation → current job aborts like a failure (status `cancelled`), remaining jobs
   of that run are not started (other queued runs are unaffected, see 7.5).
@@ -385,8 +386,10 @@ Unknown ids (deleted sources/destinations) are dropped on load.
 - On `resume`: the run continues; jobs that then fail because their destination vanished
   fall into 7.4.
 - On startup with a non-null `activeRun` (crash, forced shutdown): jobs from that run that
-  did not succeed are re-enqueued with trigger `recovery`. Stale `.partial` outputs are
-  removed by the job itself (6.6).
+  did not succeed are re-enqueued with trigger `recovery`. A job that ended without
+  success (failed, skipped, lost) is kept in `activeRun` until the run ends, so it is
+  recovered too; only successful jobs are removed from it as they finish. Stale `.bm-partial`
+  outputs are removed by the job itself (6.6).
 
 ### 7.7 App lifecycle and OS integration
 
@@ -394,7 +397,8 @@ Unknown ids (deleted sources/destinations) are dropped on load.
 - Closing the window hides it; the app keeps running in the tray / menu bar. Quit only from
   the tray menu (or Cmd+Q on macOS, which also quits).
 - Tray menu: status line ("Idle · next: Documents at 14:00" / "Running: Photos → NAS"),
-  Run all now, Pause schedules (1 hour / until resumed) or Resume, Open, Quit.
+  Run all now, Cancel running backup (only while a run is active), Pause schedules (1 hour /
+  until resumed) or Resume, Open, Quit.
 - Launch at login: `app.setLoginItemSettings({ openAtLogin, openAsHidden })` on macOS and
   Windows; on Linux, write/remove `~/.config/autostart/backup-manager.desktop`. Started at
   login → no window shown.
@@ -450,7 +454,7 @@ control. The UI saves config on each confirmed edit (no global "save" button).
 
 - **Engine** (main focus): vitest with real temp directories. Cover walk + excludes, mirror
   diff/copy/update, each deletion policy, mirror-zip fingerprint skipping, snapshot naming
-  and collisions, atomic `.partial` cleanup on failure/cancel, retention rules, missing
+  and collisions, atomic `.bm-partial` cleanup on failure/cancel, retention rules, missing
   source/destination handling, zip contents (read back with yauzl), config validation.
 - **Scheduler**: vitest with a fake clock and injected OS signals. Cover next-run
   computation (interval, daily, weekly, DST changes), catch-up runs once after a gap,
