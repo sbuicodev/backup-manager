@@ -1,0 +1,270 @@
+import { join } from 'node:path'
+import type { FileEntry } from '@shared/types'
+import { MANIFEST_NAME } from './destination'
+import { JobRun, asJobAbort, type ExecContext, type JobContext, type PreparedJob } from './job'
+import {
+  MTIME_TOLERANCE_MS,
+  basePlan,
+  looksUnmounted,
+  removalCounts,
+  removeByPolicy,
+  unreadableRels,
+  warnEmptySource
+} from './mirror-shared'
+import {
+  chunkName,
+  ownsFile,
+  packStable,
+  partBaseName,
+  type ManifestArchive,
+  type ManifestPart,
+  type PartPlan
+} from './packaging/parts'
+import { computeZipTargets, fingerprint, type ZipTarget } from './packaging/targets'
+import { splitIntoChunks, writeZip } from './packaging/zip'
+
+type ManifestV2 = { version: 2; archives: Record<string, ManifestArchive> }
+
+/** Archive files in `current/`: B.zip, B.partN.zip and their .NNN chunks. */
+const ARCHIVE_FILE = /\.zip(\.\d{3})?$/
+
+async function readManifest(ctx: JobContext, rel: string): Promise<ManifestV2> {
+  try {
+    const m = JSON.parse((await ctx.dest.readText(rel)) ?? '') as ManifestV2
+    if (m?.version === 2 && typeof m.archives === 'object' && m.archives) return m
+  } catch {
+    // unreadable, invalid or version 1: treat as empty, every archive is rebuilt once
+  }
+  return { version: 2, archives: {} }
+}
+
+/** File names a manifest part occupies at the destination. */
+function partFiles(base: string, p: Pick<ManifestPart, 'n' | 'chunked' | 'chunks'>): string[] {
+  const file = partBaseName(base, p)
+  if (!p.chunked) return [file]
+  return Array.from({ length: p.chunks ?? 0 }, (_, i) => chunkName(file, i + 1))
+}
+
+/** Name shown as a change's `archive`: the part file, or its first chunk. */
+const displayName = (base: string, p: Pick<PartPlan, 'n' | 'chunked'>): string =>
+  p.chunked ? chunkName(partBaseName(base, p), 1) : partBaseName(base, p)
+
+const unchanged = (a: FileEntry, b: FileEntry): boolean =>
+  a.size === b.size && Math.abs(a.mtimeMs - b.mtimeMs) <= MTIME_TOLERANCE_MS
+
+type PartWork = { part: PartPlan; fingerprint: string; write: boolean; prev?: ManifestPart }
+type ArchiveWork = { target: ZipTarget; prev?: ManifestArchive; parts: PartWork[] }
+
+export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
+  const { slug } = ctx.source
+  const current = `${slug}/current`
+  const manifestRel = `${current}/${MANIFEST_NAME}`
+  const level = ctx.source.zip.level
+  const targets = computeZipTargets(ctx.source, ctx.srcFiles)
+  const manifest = await readManifest(ctx, manifestRel)
+
+  // Archives with members the walk could not read keep their previous state (all parts).
+  const unreadableTops = new Set(unreadableRels(ctx).map((r) => r.split('/')[0]))
+  const unreadableTopLevel = unreadableRels(ctx).some((r) => !r.includes('/'))
+  const isBundle = ctx.source.zip.looseFiles === 'bundle'
+  const stem = (base: string): string => base.replace(/-\d+$/, '')
+  const coversUnreadable = (base: string, files: FileEntry[]): boolean =>
+    unreadableTops.size > 0 &&
+    (ctx.source.packaging === 'zip-whole' ||
+      unreadableTops.has(stem(base)) ||
+      files.some((f) => unreadableTops.has(f.rel.split('/')[0])) ||
+      // Conservative: an unreadable top-level entry may be a loose file in the bundle.
+      (isBundle && unreadableTopLevel && stem(base) === '_files'))
+
+  const existing = (await ctx.dest.list(current))
+    .filter((e) => !e.isDir && ARCHIVE_FILE.test(e.name))
+    .map((e) => e.name)
+  const emptySource = looksUnmounted(ctx, existing.length > 0)
+
+  const partFingerprint = (p: PartPlan): string =>
+    p.chunked
+      ? `${fingerprint(p.files, level)}|chunk:${ctx.zip.chunkSize}`
+      : fingerprint(p.files, level)
+
+  const kept = new Set<string>() // archive bases left exactly as they were
+  const work: ArchiveWork[] = []
+  for (const target of targets) {
+    const prev = manifest.archives[target.base]
+    if (emptySource || coversUnreadable(target.base, target.files)) {
+      kept.add(target.base)
+      continue
+    }
+    const parts: PartWork[] = []
+    for (const part of packStable(target.files, prev, ctx.zip)) {
+      const fp = partFingerprint(part)
+      const prevPart = prev?.parts.find((p) => p.n === part.n && p.chunked === part.chunked)
+      const present =
+        prevPart !== undefined &&
+        partFiles(target.base, prevPart).every((n) => existing.includes(n)) &&
+        (!prevPart.chunked || (prevPart.chunks ?? 0) > 0)
+      parts.push({
+        part,
+        fingerprint: fp,
+        prev: prevPart,
+        write: !present || prevPart.fingerprint !== fp
+      })
+    }
+    work.push({ target, prev, parts })
+  }
+
+  // Every file name the new state owns; anything else archive-like in current/ is stale.
+  const owned = (name: string): boolean => {
+    for (const w of work) {
+      for (const pw of w.parts) {
+        const file = partBaseName(w.target.base, pw.part)
+        if (!pw.part.chunked && name === file) return true
+        if (
+          pw.part.chunked &&
+          (pw.write
+            ? new RegExp(`^${escape(file)}\\.\\d{3}$`).test(name)
+            : partFiles(w.target.base, pw.prev!).includes(name))
+        )
+          return true
+      }
+    }
+    for (const base of kept) {
+      const prev = manifest.archives[base]
+      if (prev ? prev.parts.some((p) => partFiles(base, p).includes(name)) : ownsFile(base, name))
+        return true
+    }
+    return false
+  }
+  // The archive a stale file belonged to: from the previous manifest, else from its name.
+  const baseOf = (name: string): string =>
+    Object.keys(manifest.archives).find((b) => ownsFile(b, name)) ??
+    name.replace(/(\.part\d+)?\.zip(\.\d{3})?$/, '')
+  const stale = emptySource
+    ? []
+    : existing.filter((name) => !owned(name) && !coversUnreadable(baseOf(name), []))
+  const targetBases = new Set(targets.map((t) => t.base))
+
+  const toWrite = work.flatMap((w) => w.parts.filter((p) => p.write))
+  const plan = basePlan(ctx, 'mirror-zip')
+  plan.counts = {
+    ...plan.counts,
+    zip: toWrite.length,
+    unchanged: work.reduce((n, w) => n + w.parts.length, 0) - toWrite.length,
+    ...removalCounts(ctx, stale.length)
+  }
+  plan.bytes = toWrite.reduce((n, p) => n + p.part.files.reduce((m, f) => m + f.size, 0), 0)
+
+  const execute = (x: ExecContext): ReturnType<PreparedJob['execute']> =>
+    asJobAbort(ctx.dest, async () => {
+      const run = new JobRun(ctx, x, plan.bytes)
+      await ctx.dest.removePartials(slug, false)
+      await ctx.dest.removePartials(current, true)
+      await ctx.dest.mkdirp(current)
+      if (emptySource) warnEmptySource(run)
+      const archives: Record<string, ManifestArchive> = {}
+      for (const base of kept) {
+        if (manifest.archives[base]) archives[base] = manifest.archives[base]
+        if (!emptySource) {
+          run.warn({
+            path: `${base}.zip`,
+            code: 'KEPT',
+            message: 'previous archive kept because some of its files could not be read'
+          })
+        }
+      }
+
+      for (const w of work) {
+        const { base } = w.target
+        const prevFiles = new Map<string, { f: FileEntry; archive: string }>()
+        for (const p of w.prev?.parts ?? []) {
+          for (const f of p.files) prevFiles.set(f.rel, { f, archive: displayName(base, p) })
+        }
+        const parts: ManifestPart[] = []
+        for (const pw of w.parts) {
+          const { part } = pw
+          if (!pw.write) {
+            parts.push({ ...pw.prev!, files: part.files, fingerprint: pw.fingerprint })
+            continue
+          }
+          x.signal.throwIfAborted()
+          const file = partBaseName(base, part)
+          let entryErrors = 0
+          const entries = part.files.map((f) => ({
+            absPath: join(ctx.source.path, ...f.rel.split('/')),
+            name: f.rel,
+            mtimeMs: f.mtimeMs
+          }))
+          const zipOpts = {
+            signal: x.signal,
+            onBytes: (n: number) => run.progress(file, n),
+            onEntryError: (e: { name: string }, err: NodeJS.ErrnoException) => {
+              entryErrors++
+              run.warn({ path: e.name, code: err.code ?? 'ERROR', message: err.message })
+            }
+          }
+          // An archive part that cannot be written is skipped and left out of the manifest,
+          // so it is retried on the next run.
+          const chunks = await run.guard(file, async () => {
+            if (!part.chunked) {
+              await writeZip(ctx.dest, `${current}/${file}`, entries, level, zipOpts)
+              return 0
+            }
+            const r = await writeZip(ctx.dest, `${current}/${file}`, entries, level, {
+              ...zipOpts,
+              finalize: false
+            })
+            const names = await splitIntoChunks(
+              ctx.dest,
+              r.tempRel!,
+              `${current}/${file}`,
+              ctx.zip.chunkSize!,
+              x.signal
+            )
+            return names.length
+          })
+          if (chunks === undefined) continue
+          run.progress(file, 0, true)
+          run.counts.zipped++
+          parts.push({
+            n: part.n,
+            chunked: part.chunked,
+            ...(part.chunked ? { chunks } : {}),
+            // A skipped entry leaves the fingerprint unset so the part is retried next run.
+            fingerprint: entryErrors === 0 ? pw.fingerprint : '',
+            files: part.files
+          })
+          for (const f of part.files) {
+            const before = prevFiles.get(f.rel)
+            if (!before)
+              run.change('added', f.rel, { size: f.size, archive: displayName(base, part) })
+            else if (!unchanged(before.f, f)) {
+              run.change('updated', f.rel, { size: f.size, archive: displayName(base, part) })
+            }
+          }
+        }
+        const now = new Set(w.target.files.map((f) => f.rel))
+        for (const [rel, before] of prevFiles) {
+          if (!now.has(rel)) run.change('removed', rel, { archive: before.archive })
+        }
+        if (parts.length > 0) archives[base] = { limit: ctx.zip.limit, parts }
+      }
+
+      // Archives whose source content is gone entirely: their files were removed.
+      if (!emptySource) {
+        for (const [base, prev] of Object.entries(manifest.archives)) {
+          if (targetBases.has(base) || kept.has(base)) continue
+          for (const p of prev.parts) {
+            for (const f of p.files) run.change('removed', f.rel, { archive: displayName(base, p) })
+          }
+        }
+      }
+      for (const name of stale) await removeByPolicy(ctx, run, name, false)
+      await ctx.dest.writeTextAtomic(
+        manifestRel,
+        JSON.stringify({ version: 2, archives } satisfies ManifestV2, null, 2)
+      )
+      return run.result()
+    })
+  return { plan, execute }
+}
+
+const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

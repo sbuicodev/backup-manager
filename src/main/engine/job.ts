@@ -1,4 +1,4 @@
-import type { Source } from '@shared/schema'
+import type { EffectiveZip, Source } from '@shared/schema'
 import type {
   ChangeAction,
   ChangeEntry,
@@ -21,6 +21,8 @@ export type JobContext = {
   srcFiles: FileEntry[]
   srcSkipped: SkippedEntry[]
   now: Date
+  /** Effective zip part settings for this source × destination. */
+  zip: EffectiveZip
 }
 export type ExecContext = {
   runId: string

@@ -1,4 +1,9 @@
-import type { Config, Destination as DestinationConfig, Source } from '@shared/schema'
+import {
+  effectiveZipSettings,
+  type Config,
+  type Destination as DestinationConfig,
+  type Source
+} from '@shared/schema'
 import type { FileEntry, JobKind, JobPlan, JobRequest, Plan, SkippedEntry } from '@shared/types'
 import { FsDestination, type Destination } from './destination'
 import { effectiveExcludes, type JobContext, type PreparedJob } from './job'
@@ -107,7 +112,8 @@ export async function planRun(
       globalExcludes: config.globalExcludes,
       srcFiles: walked.files,
       srcSkipped: walked.skipped,
-      now
+      now,
+      zip: effectiveZipSettings(source, d)
     }
     try {
       const job =

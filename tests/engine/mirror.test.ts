@@ -1,7 +1,7 @@
 import { chmod, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { newSource, type Source } from '@shared/schema'
+import { effectiveZipSettings, newDestination, newSource, type Source } from '@shared/schema'
 import type { ChangeEntry, FileEntry, JobResult, ProgressEvent } from '@shared/types'
 import { FsDestination } from '../../src/main/engine/destination'
 import { JobAbort } from '../../src/main/engine/errors'
@@ -42,7 +42,8 @@ async function ctxFor(source: Source, dest: FsDestination): Promise<JobContext> 
     globalExcludes: ['.DS_Store'],
     srcFiles: files,
     srcSkipped: skipped,
-    now: NOW
+    now: NOW,
+    zip: effectiveZipSettings(source, newDestination('/d', 'D'))
   }
 }
 
@@ -276,7 +277,7 @@ describe('mirror-zip', () => {
       'S/current/A.zip',
       'S/current/B.zip'
     ])
-    expect(JSON.parse(tree['S/current/.backup-manager.json'])).toMatchObject({ version: 1 })
+    expect(JSON.parse(tree['S/current/.backup-manager.json'])).toMatchObject({ version: 2 })
   })
 
   test('only archives whose fingerprint changed are rewritten', async () => {
@@ -309,9 +310,7 @@ describe('mirror-zip', () => {
       'S/current/.backup-manager.json',
       'S/current/A.zip'
     ])
-    expect(Object.keys(JSON.parse(tree['S/current/.backup-manager.json']).archives)).toEqual([
-      'A.zip'
-    ])
+    expect(Object.keys(JSON.parse(tree['S/current/.backup-manager.json']).archives)).toEqual(['A'])
   })
 
   test('missing archive is rewritten even if manifest matches', async () => {

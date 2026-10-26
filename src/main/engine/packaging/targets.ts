@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import type { Source } from '@shared/schema'
 import type { FileEntry } from '@shared/types'
 
-export type ZipTarget = { name: string; files: FileEntry[]; fingerprint: string }
+/** `base` is the archive name without `.zip`; parts are named from it (see parts.ts). */
+export type ZipTarget = { base: string; name: string; files: FileEntry[]; fingerprint: string }
 
 export function fingerprint(files: FileEntry[], level: number): string {
   const lines = [...files]
@@ -17,7 +18,14 @@ export function fingerprint(files: FileEntry[], level: number): string {
 export function computeZipTargets(source: Source, files: FileEntry[]): ZipTarget[] {
   const level = source.zip.level
   if (source.packaging === 'zip-whole') {
-    return [{ name: `${source.slug}.zip`, files, fingerprint: fingerprint(files, level) }]
+    return [
+      {
+        base: source.slug,
+        name: `${source.slug}.zip`,
+        files,
+        fingerprint: fingerprint(files, level)
+      }
+    ]
   }
 
   const dirs = new Map<string, FileEntry[]>()
@@ -41,11 +49,15 @@ export function computeZipTargets(source: Source, files: FileEntry[]): ZipTarget
     taken.add(name.toLowerCase())
     return name
   }
-  const target = (stem: string, group: FileEntry[]): ZipTarget => ({
-    name: claim(stem),
-    files: group,
-    fingerprint: fingerprint(group, level)
-  })
+  const target = (stem: string, group: FileEntry[]): ZipTarget => {
+    const name = claim(stem)
+    return {
+      base: name.slice(0, -'.zip'.length),
+      name,
+      files: group,
+      fingerprint: fingerprint(group, level)
+    }
+  }
 
   const targets = [...dirs].map(([dir, group]) => target(dir, group))
   if (source.zip.looseFiles === 'bundle') {

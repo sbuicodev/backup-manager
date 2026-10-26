@@ -1,4 +1,4 @@
-import type { Source } from '@shared/schema'
+import { effectiveZipSettings, newDestination, type Source } from '@shared/schema'
 import type { ChangeEntry, ProgressEvent } from '@shared/types'
 import { FsDestination } from '../../src/main/engine/destination'
 import type { ExecContext, JobContext } from '../../src/main/engine/job'
@@ -13,7 +13,8 @@ export async function ctxFor(source: Source, dest: FsDestination, now: Date): Pr
     globalExcludes: [],
     srcFiles: files,
     srcSkipped: skipped,
-    now
+    now,
+    zip: effectiveZipSettings(source, newDestination('/d', 'D'))
   }
 }
 
