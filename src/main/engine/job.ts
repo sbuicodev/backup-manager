@@ -23,6 +23,8 @@ export type JobContext = {
   now: Date
   /** Effective zip part settings for this source × destination. */
   zip: EffectiveZip
+  /** Folder of snapshot file-list indexes; when unset, snapshots record no change diff. */
+  indexDir?: string
 }
 export type ExecContext = {
   runId: string

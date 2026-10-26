@@ -17,6 +17,8 @@ export type PlanDeps = {
   now?: () => Date
   makeDestination?: (root: string) => Destination
   signal?: AbortSignal
+  /** Snapshot file-list index folder (enables snapshot change diffs). */
+  indexDir?: string
 }
 
 export type PreparedEntry = { plan: JobPlan; execute?: PreparedJob['execute'] }
@@ -113,7 +115,8 @@ export async function planRun(
       srcFiles: walked.files,
       srcSkipped: walked.skipped,
       now,
-      zip: effectiveZipSettings(source, d)
+      zip: effectiveZipSettings(source, d),
+      indexDir: deps.indexDir
     }
     try {
       const job =

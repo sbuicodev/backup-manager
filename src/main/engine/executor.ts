@@ -24,6 +24,8 @@ export type RunOptions = {
   historyDir: string
   now?: () => Date
   makeDestination?: (root: string) => Destination
+  /** Snapshot file-list index folder (enables snapshot change diffs). */
+  indexDir?: string
 }
 
 const RANK: Record<JobStatus, number> = {
@@ -69,8 +71,14 @@ export async function runBackup(
 
   let prepared: Awaited<ReturnType<typeof planRun>>['prepared'] = []
   try {
-    prepared = (await planRun(config, request, { now: () => startedAt, makeDestination, signal }))
-      .prepared
+    prepared = (
+      await planRun(config, request, {
+        now: () => startedAt,
+        makeDestination,
+        signal,
+        indexDir: opts.indexDir
+      })
+    ).prepared
   } catch (err) {
     if (!signal.aborted) throw err
   }

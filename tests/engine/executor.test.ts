@@ -166,3 +166,28 @@ test('a job that fails part-way keeps the changes recorded before it failed', as
   )
   expect(log.jobs[0]).toMatchObject({ status: 'failed', reason: 'disk-full', changeCount: 2 })
 })
+
+test('retention prunes every part of an old split snapshot', async () => {
+  const { cfg, history, base } = await world(1)
+  const { randomBytes } = await import('node:crypto')
+  const { writeFile: wf } = await import('node:fs/promises')
+  for (const n of ['p1', 'p2', 'p3']) await wf(join(base, 's1', n), randomBytes(400 * 1024))
+  cfg.sources.pop()
+  cfg.sources[0] = {
+    ...cfg.sources[0],
+    mode: 'snapshot',
+    packaging: 'zip-whole',
+    snapshot: { keepMin: 1, maxAgeDays: 0 },
+    zip: { ...cfg.sources[0].zip, level: 0, partLimitBytes: 1024 * 1024 }
+  }
+  let t = new Date(2026, 9, 25, 10, 0, 0).getTime()
+  const now = (): Date => new Date((t += 1000))
+  await runBackup(cfg, {}, opts(history, { now }))
+  const d1 = new FsDestination(join(base, 'd1'))
+  expect((await d1.list('S1')).length).toBe(2)
+  const log2 = await runBackup(cfg, {}, opts(history, { now, runId: 'run-2' }))
+  expect(log2.jobs[0].counts.pruned).toBe(1)
+  const left = (await d1.list('S1')).map((e) => e.name)
+  expect(left).toHaveLength(2)
+  expect(new Set(left.map((n) => n.slice(0, 17))).size).toBe(1)
+})
