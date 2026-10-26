@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, History as HistoryIcon } from 'lucide-react'
 import type { Config } from '@shared/schema'
-import type { RunLog, RunSummary } from '@shared/types'
+import type { RunLog, RunSummary, SchedulerStatus } from '@shared/types'
 import { PageHeader } from '@/components/PageHeader'
 import { REASONS, StatusBadge, TriggerBadge } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ import {
 import { useNow } from '@/hooks/useSchedulerStatus'
 import { api } from '@/lib/api'
 import { formatBytes, formatDuration, formatRelativeTime } from '@/lib/format'
+import { retryFor } from '@/lib/retry'
 
 const duration = (r: { startedAt: string; endedAt: string }): string =>
   formatDuration(new Date(r.endedAt).getTime() - new Date(r.startedAt).getTime())
@@ -24,10 +25,12 @@ const duration = (r: { startedAt: string; endedAt: string }): string =>
 function RunDetail({
   log,
   config,
+  status,
   onBack
 }: {
   log: RunLog
   config: Config
+  status: SchedulerStatus | null
   onBack: () => void
 }): React.JSX.Element {
   const source = (id: string): string =>
@@ -80,6 +83,7 @@ function RunDetail({
                     <span className="text-muted-foreground">
                       {REASONS[j.reason]}
                       {j.error && ` (${j.error})`}
+                      {retryFor(status, j.sourceId, j.destId) && ' · retry pending'}
                     </span>
                   ) : (
                     changes.join(' · ') || 'No changes'
@@ -119,10 +123,12 @@ function RunDetail({
 
 export function History({
   config,
+  status,
   openId,
   refreshKey
 }: {
   config: Config
+  status: SchedulerStatus | null
   openId?: string
   refreshKey: string | null
 }): React.JSX.Element {
@@ -137,7 +143,10 @@ export function History({
     if (openId) void api.history.get(openId).then(setSelected)
   }, [openId])
 
-  if (selected) return <RunDetail log={selected} config={config} onBack={() => setSelected(null)} />
+  if (selected)
+    return (
+      <RunDetail log={selected} config={config} status={status} onBack={() => setSelected(null)} />
+    )
 
   return (
     <div>

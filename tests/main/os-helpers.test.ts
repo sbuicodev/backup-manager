@@ -59,6 +59,21 @@ describe('trayStatusLine', () => {
   })
 })
 
+test('tray status line mentions pending retries when idle', () => {
+  const st = idle({
+    nextRuns: [{ sourceId: 's1', at: new Date(2026, 9, 26, 14).toISOString() }],
+    pendingRetries: [
+      { sourceId: 's1', destId: 'd1', nextRetryAt: null },
+      { sourceId: 's2', destId: 'd1', nextRetryAt: null }
+    ]
+  })
+  expect(trayStatusLine(st, cfg(), now)).toBe('Idle · next: Documents at 14:00 · 2 retries pending')
+  expect(trayStatusLine({ ...st, pendingRetries: st.pendingRetries.slice(0, 1) }, cfg(), now)).toBe(
+    'Idle · next: Documents at 14:00 · 1 retry pending'
+  )
+  expect(trayStatusLine({ ...st, pausedUntil: 'forever' }, cfg(), now)).toBe('Paused')
+})
+
 describe('shouldNotify', () => {
   const table: [Settings['notifications'], RunStatus, boolean][] = [
     ['problems', 'completed', false],

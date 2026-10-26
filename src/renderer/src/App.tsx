@@ -24,6 +24,7 @@ import { useConfig } from '@/hooks/useConfig'
 import { useNow, useSchedulerStatus } from '@/hooks/useSchedulerStatus'
 import { api } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/format'
+import { headerRetryText } from '@/lib/retry'
 import { cn } from '@/lib/utils'
 import { useRunProgress } from '@/hooks/useRunProgress'
 import { Destinations } from '@/screens/Destinations'
@@ -47,6 +48,8 @@ function statusText(status: SchedulerStatus | null, config: Config, now: Date): 
   if (status.pausedUntil) {
     return `Schedules paused until ${formatRelativeTime(new Date(status.pausedUntil), now)}`
   }
+  const waiting = headerRetryText(status, config, now)
+  if (waiting) return waiting
   const next = status.nextRuns
     .filter((n): n is { sourceId: string; at: string } => n.at !== null)
     .sort((a, b) => (a.at < b.at ? -1 : 1))[0]
@@ -199,6 +202,7 @@ function App(): React.JSX.Element {
             {screen === 'history' && (
               <History
                 config={config}
+                status={status}
                 openId={screenArg}
                 refreshKey={progress.lastLog?.id ?? null}
               />

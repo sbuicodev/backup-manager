@@ -29,6 +29,7 @@ import type { UseConfig } from '@/hooks/useConfig'
 import { useNow } from '@/hooks/useSchedulerStatus'
 import { api } from '@/lib/api'
 import { describeSchedule, formatRelativeTime } from '@/lib/format'
+import { checkClock } from '@/lib/retry'
 import { SourceEditor } from './SourceEditor'
 
 const PACKAGING: Record<Source['packaging'], string> = {
@@ -111,6 +112,15 @@ export function Sources({
                   {s.enabled && nextRun(s.id) && (
                     <div className="text-muted-foreground text-xs">next {nextRun(s.id)}</div>
                   )}
+                  {status?.pendingRetries
+                    .filter((r) => r.sourceId === s.id)
+                    .map((r) => (
+                      <div key={r.destId} className="text-xs text-amber-600 dark:text-amber-400">
+                        Waiting for{' '}
+                        {config.destinations.find((d) => d.id === r.destId)?.name ?? 'destination'}{' '}
+                        (next check {checkClock(r.nextRetryAt, now)})
+                      </div>
+                    ))}
                 </TableCell>
                 <TableCell>
                   <Switch

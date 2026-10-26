@@ -27,9 +27,11 @@ export function trayStatusLine(
   const next = status.nextRuns
     .filter((n): n is { sourceId: string; at: string } => n.at !== null)
     .sort((a, b) => (a.at < b.at ? -1 : 1))[0]
-  if (!next) return 'Idle · no schedules'
+  const n = status.pendingRetries.length
+  const retries = n === 0 ? '' : ` · ${n} ${n === 1 ? 'retry' : 'retries'} pending`
+  if (!next) return `Idle · no schedules${retries}`
   const name = config.sources.find((s) => s.id === next.sourceId)?.name ?? '?'
-  return `Idle · next: ${name} at ${shortTime(new Date(next.at), now)}`
+  return `Idle · next: ${name} at ${shortTime(new Date(next.at), now)}${retries}`
 }
 
 export function shouldNotify(setting: Settings['notifications'], status: RunStatus): boolean {

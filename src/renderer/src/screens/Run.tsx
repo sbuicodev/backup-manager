@@ -21,6 +21,8 @@ import {
 import type { RunProgress } from '@/hooks/useRunProgress'
 import { api } from '@/lib/api'
 import { formatBytes, formatDuration } from '@/lib/format'
+import { jobOutcomeText, nextCheckIn, retryFor } from '@/lib/retry'
+import { useNow } from '@/hooks/useSchedulerStatus'
 
 function names(config: Config): {
   source: (id: string) => string
@@ -106,6 +108,7 @@ export function Run({
   status: SchedulerStatus | null
   progress: RunProgress
 }): React.JSX.Element {
+  const now = useNow(15_000)
   const enabled = config.sources.filter((s) => s.enabled)
   const [selected, setSelected] = useState<Set<string>>(() => new Set(enabled.map((s) => s.id)))
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -252,7 +255,14 @@ export function Run({
                   {n.source(j.sourceId)} → {n.dest(j.destId)}
                 </span>
                 <span className="text-muted-foreground ml-auto text-xs">
-                  {j.reason ? REASONS[j.reason] : formatBytes(j.bytesWritten)}
+                  {j.reason
+                    ? (jobOutcomeText(
+                        j.reason,
+                        n.dest(j.destId),
+                        retryFor(status, j.sourceId, j.destId),
+                        now
+                      ) ?? REASONS[j.reason])
+                    : formatBytes(j.bytesWritten)}
                   {j.warnings.length > 0 && ` · ${j.warnings.length} warnings`}
                 </span>
               </div>
@@ -277,6 +287,9 @@ export function Run({
               <div key={`${j.sourceId}:${j.destId}`} className="flex items-center gap-2">
                 <Badge variant="outline">Retry when available</Badge>
                 {n.source(j.sourceId)} → {n.dest(j.destId)}
+                <span className="text-muted-foreground ml-auto text-xs">
+                  {nextCheckIn(j.nextRetryAt, now)}
+                </span>
               </div>
             ))}
           </CardContent>
