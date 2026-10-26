@@ -199,7 +199,7 @@ function App(): React.JSX.Element {
   return (
     <TooltipProvider>
       <div className="flex h-full flex-col">
-        <TopBar onToggleSidebar={toggleSidebar}>
+        <TopBar sidebar={{ collapsed, onToggle: toggleSidebar }}>
           <SchedulerStatusControls status={status} config={config} />
         </TopBar>
         <div className="flex min-h-0 flex-1">
