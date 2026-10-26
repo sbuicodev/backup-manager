@@ -1,4 +1,5 @@
-import { readdir } from 'node:fs/promises'
+import { mkdir, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import type { ChangeEntry } from '@shared/types'
 import { ChangeRecorder, changeFileName, readChanges } from '../../src/main/engine/changes'
@@ -61,4 +62,33 @@ test('missing change file → empty page', async () => {
     counts: { added: 0, updated: 0, removed: 0, trashed: 0, deleted: 0, skipped: 0 },
     items: []
   })
+})
+
+test('close() returns even when the change file cannot be written', async () => {
+  const dir = await tmpDir()
+  await mkdir(join(dir, `${changeFileName('run-x')}.bm-partial`)) // a directory where the file goes
+  const rec = await ChangeRecorder.open(dir, 'run-x')
+  rec.record(e('added', 'a'))
+  const closed = await Promise.race([
+    rec.close().then(() => 'closed'),
+    new Promise((r) => setTimeout(() => r('hung'), 2000))
+  ])
+  expect(closed).toBe('closed')
+})
+
+test('recording respects backpressure: buffered bytes stay bounded when drained', async () => {
+  const dir = await tmpDir()
+  const rec = await ChangeRecorder.open(dir, 'run-big')
+  let max = 0
+  for (let i = 0; i < 200_000; i++) {
+    if (!rec.record({ ...e('added', `some/fairly/long/path/number/${i}/file.txt`), size: i })) {
+      await rec.drain()
+    }
+    max = Math.max(max, rec.bufferedBytes())
+  }
+  await rec.close()
+  expect(max).toBeLessThan(1024 * 1024)
+  expect(
+    (await readChanges(dir, 'run-big', { sourceId: 's1', destId: 'd1', limit: 1 })).total
+  ).toBe(200_000)
 })

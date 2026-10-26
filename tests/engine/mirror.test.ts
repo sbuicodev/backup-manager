@@ -52,7 +52,8 @@ function exec(events: ProgressEvent[] = [], changes: ChangeEntry[] = []): ExecCo
     runId: 'r1',
     signal: new AbortController().signal,
     emit: (e) => events.push(e),
-    record: (c) => changes.push(c)
+    record: (c) => (changes.push(c), true),
+    drain: async () => {}
   }
 }
 

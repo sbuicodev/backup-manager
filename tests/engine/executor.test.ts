@@ -191,3 +191,15 @@ test('retention prunes every part of an old split snapshot', async () => {
   expect(left).toHaveLength(2)
   expect(new Set(left.map((n) => n.slice(0, 17))).size).toBe(1)
 })
+
+test('a broken change file never stops the run from finishing and being logged', async () => {
+  const { cfg, history } = await world(1)
+  const { mkdir: mk } = await import('node:fs/promises')
+  await mk(join(history, 'run-1.changes.ndjson.gz.bm-partial'), { recursive: true })
+  const log = await Promise.race([
+    runBackup(cfg, {}, opts(history)),
+    new Promise<null>((r) => setTimeout(() => r(null), 5000))
+  ])
+  expect(log).not.toBeNull()
+  expect((await listRuns(history)).map((r) => r.id)).toEqual(['run-1'])
+})

@@ -68,6 +68,7 @@ export async function runBackup(
   const results: JobResult[] = []
   const recorder = await ChangeRecorder.open(opts.historyDir, runId)
   const record = recorder.record.bind(recorder)
+  const drain = recorder.drain.bind(recorder)
 
   let prepared: Awaited<ReturnType<typeof planRun>>['prepared'] = []
   try {
@@ -120,7 +121,7 @@ export async function runBackup(
     })
     let result: JobResult
     try {
-      result = await p.execute({ runId, signal, emit, record })
+      result = await p.execute({ runId, signal, emit, record, drain })
       const source = config.sources.find((s) => s.id === plan.sourceId)
       const destCfg = config.destinations.find((d) => d.id === plan.destId)
       if (source && destCfg) {

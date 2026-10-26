@@ -30,8 +30,10 @@ export type ExecContext = {
   runId: string
   signal: AbortSignal
   emit: (e: ProgressEvent) => void
-  /** Records one per-file change in the run's change history. */
-  record: (e: ChangeEntry) => void
+  /** Records one per-file change; false means the history buffer is full (call `drain`). */
+  record: (e: ChangeEntry) => boolean
+  /** Waits until buffered change entries have been written out. */
+  drain: () => Promise<void>
 }
 export type PreparedJob = { plan: JobPlan; execute(x: ExecContext): Promise<JobResult> }
 
@@ -51,6 +53,7 @@ export class JobRun {
   readonly warnings: Warning[] = []
   bytesWritten = 0
   private lastEmitted = 0
+  private mustDrain = false
 
   constructor(
     private ctx: JobContext,
@@ -78,7 +81,21 @@ export class JobRun {
     path: string,
     extra: { size?: number; archive?: string; code?: string } = {}
   ): void {
-    this.x.record({ sourceId: this.ctx.source.id, destId: this.ctx.destId, action, path, ...extra })
+    const ok = this.x.record({
+      sourceId: this.ctx.source.id,
+      destId: this.ctx.destId,
+      action,
+      path,
+      ...extra
+    })
+    this.mustDrain ||= !ok
+  }
+
+  /** Lets the change history catch up when its buffer is full; call between batches of work. */
+  async settle(): Promise<void> {
+    if (!this.mustDrain) return
+    this.mustDrain = false
+    await this.x.drain()
   }
 
   /** Accounts bytes; emits a progress event at most every MiB unless `force`. */

@@ -99,7 +99,8 @@ test('unchanged mirror plans zero bytes', async () => {
       runId: 'r',
       signal: new AbortController().signal,
       emit: () => {},
-      record: () => {}
+      record: () => true,
+      drain: async () => {}
     })
   const { plan } = await planRun(cfg, {})
   expect(plan.jobs[0]).toMatchObject({ counts: { unchanged: 1, copy: 0 }, bytes: 0 })

@@ -168,12 +168,17 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
         for (const [rel, { f, archive }] of written) {
           const p = before.get(rel)
           const extra = { size: f.size, ...(archive ? { archive } : {}) }
+          await run.settle()
           if (!p) run.change('added', rel, extra)
           else if (p.size !== f.size || Math.abs(p.mtimeMs - f.mtimeMs) > MTIME_TOLERANCE_MS) {
             run.change('updated', rel, extra)
           }
         }
-        for (const rel of before.keys()) if (!written.has(rel)) run.change('removed', rel)
+        for (const rel of before.keys()) {
+          if (written.has(rel)) continue
+          run.change('removed', rel)
+          await run.settle()
+        }
         await writeSnapshotIndex(
           ctx.indexDir,
           source.id,

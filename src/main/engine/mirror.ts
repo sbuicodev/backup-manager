@@ -76,7 +76,10 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
       await ctx.dest.mkdirp(current)
       // Removals first: on case-insensitive filesystems a case-only rename must not
       // have its freshly copied file trashed afterwards.
-      for (const rel of diff.remove) await removeByPolicy(ctx, run, rel)
+      for (const rel of diff.remove) {
+        await removeByPolicy(ctx, run, rel)
+        await run.settle()
+      }
       if (ctx.source.mirror.deletion !== 'never') await ctx.dest.removeEmptyDirs(current)
       const conflicts = await caseConflicts(ctx.dest, current, ctx.srcFiles)
       const copyOne = async (f: FileEntry, isUpdate: boolean): Promise<void> => {
@@ -94,6 +97,7 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
           if (isUpdate) run.counts.updated++
           else run.counts.copied++
           run.change(isUpdate ? 'updated' : 'added', f.rel, { size: f.size })
+          await run.settle()
         }
       }
       for (const f of diff.copy) await copyOne(f, false)

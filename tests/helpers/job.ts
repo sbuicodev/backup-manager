@@ -23,7 +23,13 @@ export function exec(
   signal = new AbortController().signal,
   changes: ChangeEntry[] = []
 ): ExecContext {
-  return { runId: 'r1', signal, emit: (e) => events.push(e), record: (c) => changes.push(c) }
+  return {
+    runId: 'r1',
+    signal,
+    emit: (e) => events.push(e),
+    record: (c) => (changes.push(c), true),
+    drain: async () => {}
+  }
 }
 
 /** FsDestination whose Nth copyFileIn (or zip stream open) throws an errno error. */

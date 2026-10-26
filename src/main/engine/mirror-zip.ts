@@ -291,11 +291,13 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
             else if (!unchanged(before.f, f)) {
               run.change('updated', f.rel, { size: f.size, archive: displayName(base, part) })
             }
+            await run.settle()
           }
         }
         const now = new Set(w.target.files.map((f) => f.rel))
         for (const [rel, before] of prevFiles) {
           if (!now.has(rel)) run.change('removed', rel, { archive: before.archive })
+          await run.settle()
         }
         if (parts.length > 0) archives[base] = { limit: ctx.zip.limit, parts }
       }
@@ -305,7 +307,10 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
         for (const [base, prev] of Object.entries(manifest.archives)) {
           if (targetBases.has(base) || kept.has(base)) continue
           for (const p of prev.parts) {
-            for (const f of p.files) run.change('removed', f.rel, { archive: displayName(base, p) })
+            for (const f of p.files) {
+              run.change('removed', f.rel, { archive: displayName(base, p) })
+              await run.settle()
+            }
           }
         }
       }
