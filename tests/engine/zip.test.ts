@@ -255,7 +255,7 @@ describe('part size budget', () => {
     async (_label, size, level) => {
       const src = await tmpDir()
       const root = await tmpDir()
-      const files = []
+      const files: { rel: string; size: number; mtimeMs: number }[] = []
       for (let i = 0; i < 2000; i++) {
         const rel = `dir-${i % 7}/file-${i}.bin`
         await mkdir(join(src, `dir-${i % 7}`), { recursive: true })
