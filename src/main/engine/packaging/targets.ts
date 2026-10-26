@@ -43,9 +43,12 @@ export function computeZipTargets(source: Source, files: FileEntry[]): ZipTarget
   }
 
   const taken = new Set<string>()
+  // A stem ending in ".partN" would share file names with another archive's parts.
+  const unusable = (name: string): boolean =>
+    taken.has(name.toLowerCase()) || /\.part\d+\.zip$/i.test(name)
   const claim = (stem: string): string => {
     let name = `${stem}.zip`
-    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${stem}-${n}.zip`
+    for (let n = 2; unusable(name); n++) name = `${stem}-${n}.zip`
     taken.add(name.toLowerCase())
     return name
   }

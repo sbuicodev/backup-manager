@@ -88,3 +88,9 @@ test('targets carry their fingerprint', () => {
   const [t] = computeZipTargets(src('zip-whole'), files)
   expect(t.fingerprint).toBe(fingerprint(files, 6))
 })
+
+test('names that look like part names never collide with another archive\'s parts', () => {
+  const t = computeZipTargets(src('zip-children'), [f('x/a'), f('x.part1/only'), f('x.part12')])
+  expect(Object.keys(shape(t)).sort()).toEqual(['x.part1-2.zip', 'x.part12-2.zip', 'x.zip'])
+  expect(t.find((x) => x.name === 'x.part1-2.zip')?.base).toBe('x.part1-2')
+})
