@@ -1,10 +1,15 @@
 import { randomBytes } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import yauzl from 'yauzl'
 import { FsDestination } from '../../src/main/engine/destination'
-import { readZipEntryCount, writeZip, type ZipEntry } from '../../src/main/engine/packaging/zip'
+import {
+  readZipEntryCount,
+  splitIntoChunks,
+  writeZip,
+  type ZipEntry
+} from '../../src/main/engine/packaging/zip'
 import { makeTree, readTree, tmpDir } from '../helpers/fs'
 
 type ReadEntry = { name: string; content: string; method: number; mtime: Date }
@@ -165,3 +170,74 @@ function readZipBuffers(file: string): Promise<Record<string, Buffer>> {
     })
   })
 }
+
+describe('chunked parts', () => {
+  async function bigZipTemp(): Promise<{
+    root: string
+    dest: FsDestination
+    tempRel: string
+    content: Buffer
+  }> {
+    const src = await tmpDir()
+    const root = await tmpDir()
+    const content = randomBytes(3 * 1024 * 1024 + 123)
+    await writeFile(join(src, 'big.bin'), content)
+    const dest = new FsDestination(root)
+    const r = await writeZip(
+      dest,
+      'S/B.part1.zip',
+      [{ absPath: join(src, 'big.bin'), name: 'big.bin', mtimeMs: Date.now() }],
+      0,
+      {
+        finalize: false
+      }
+    )
+    return { root, dest, tempRel: r.tempRel!, content }
+  }
+
+  test('finalize:false leaves a verified temp zip and no target', async () => {
+    const { root, tempRel } = await bigZipTemp()
+    expect(tempRel).toMatch(/\.bm-partial$/)
+    expect(await readZipEntryCount(join(root, ...tempRel.split('/')))).toBe(1)
+    expect(Object.keys(await readTree(root)).some((k) => k === 'S/B.part1.zip')).toBe(false)
+  })
+
+  test('chunks rejoin byte-identically to the zip, which extracts the file', async () => {
+    const { root, dest, tempRel, content } = await bigZipTemp()
+    const zipBytes = await readFile(join(root, ...tempRel.split('/')))
+    const names = await splitIntoChunks(dest, tempRel, 'S/B.part1.zip', 1024 * 1024)
+    expect(names).toEqual([
+      'B.part1.zip.001',
+      'B.part1.zip.002',
+      'B.part1.zip.003',
+      'B.part1.zip.004'
+    ])
+    const joined = Buffer.concat(await Promise.all(names.map((n) => readFile(join(root, 'S', n)))))
+    expect(joined.equals(zipBytes)).toBe(true)
+    await writeFile(join(root, 'joined.zip'), joined)
+    expect((await readZipBuffers(join(root, 'joined.zip')))['big.bin'].equals(content)).toBe(true)
+    expect((await dest.list('S')).map((e) => e.name).sort()).toEqual(names)
+  })
+
+  test('stale higher-numbered chunks from a larger previous version are removed', async () => {
+    const { dest, tempRel } = await bigZipTemp()
+    await dest.writeTextAtomic('S/B.part1.zip.005', 'old')
+    await dest.writeTextAtomic('S/B.part1.zip.006', 'old')
+    await splitIntoChunks(dest, tempRel, 'S/B.part1.zip', 1024 * 1024)
+    expect((await dest.list('S')).map((e) => e.name).sort()).toEqual([
+      'B.part1.zip.001',
+      'B.part1.zip.002',
+      'B.part1.zip.003',
+      'B.part1.zip.004'
+    ])
+  })
+
+  test('abort mid-split leaves no chunk files and no temp file', async () => {
+    const { dest, tempRel } = await bigZipTemp()
+    const ac = new AbortController()
+    const p = splitIntoChunks(dest, tempRel, 'S/B.part1.zip', 1024 * 1024, ac.signal)
+    ac.abort()
+    await expect(p).rejects.toMatchObject({ name: 'AbortError' })
+    expect(await dest.list('S')).toEqual([])
+  })
+})

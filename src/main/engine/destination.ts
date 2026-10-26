@@ -30,6 +30,8 @@ export interface Destination {
     onBytes?: (n: number) => void
   ): Promise<{ bytes: number }>
   writeStream(rel: string): Promise<NodeJS.WritableStream>
+  /** Reads `rel`, optionally only bytes `start`..`end` (inclusive). */
+  readStream(rel: string, start?: number, end?: number): NodeJS.ReadableStream
   rename(fromRel: string, toRel: string): Promise<void>
   remove(rel: string): Promise<void>
   removeEmptyDirs(rel: string): Promise<void>
@@ -141,6 +143,10 @@ export class FsDestination implements Destination {
       await rm(partial, { force: true })
       throw err
     }
+  }
+
+  readStream(rel: string, start?: number, end?: number): NodeJS.ReadableStream {
+    return createReadStream(this.abs(rel), { start, end })
   }
 
   async writeStream(rel: string): Promise<NodeJS.WritableStream> {

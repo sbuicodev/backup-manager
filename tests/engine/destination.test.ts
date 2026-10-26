@@ -154,3 +154,11 @@ describe('FsDestination', () => {
     expect(() => d.abs('../x')).toThrow()
   })
 })
+
+test('readStream reads an inclusive byte range', async () => {
+  const root = await tmpDir()
+  await makeTree(root, { 'f.txt': 'abcdef' })
+  const chunks: Buffer[] = []
+  for await (const c of new FsDestination(root).readStream('f.txt', 2, 3)) chunks.push(c as Buffer)
+  expect(Buffer.concat(chunks).toString()).toBe('cd')
+})

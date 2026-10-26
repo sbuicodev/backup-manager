@@ -5,7 +5,8 @@ import { pipeline } from 'node:stream/promises'
 import yazl from 'yazl'
 import type { Destination } from '../destination'
 import { FILE_LEVEL } from '../errors'
-import { partialSiblingRel } from '../fsutil'
+import { joinRel, partialSiblingRel } from '../fsutil'
+import { chunkName } from './parts'
 
 export type ZipEntry = { absPath: string; name: string; mtimeMs: number }
 
@@ -13,6 +14,8 @@ export type WriteZipOptions = {
   signal?: AbortSignal
   onBytes?: (n: number) => void
   onEntryError?: (e: ZipEntry, err: NodeJS.ErrnoException) => void
+  /** false: leave the verified archive at its temp path (`tempRel`) for the caller to move. */
+  finalize?: boolean
 }
 
 /**
@@ -25,7 +28,7 @@ export async function writeZip(
   entries: ZipEntry[],
   level: number,
   opts: WriteZipOptions
-): Promise<{ bytes: number; entryCount: number }> {
+): Promise<{ bytes: number; entryCount: number; tempRel?: string }> {
   const partialRel = partialSiblingRel(rel)
   const out = await dest.writeStream(partialRel)
   const zip = new yazl.ZipFile()
@@ -92,6 +95,7 @@ export async function writeZip(
         `zip verification failed for ${rel}: ${count} entries, expected ${entryCount}`
       )
     }
+    if (opts.finalize === false) return { bytes, entryCount, tempRel: partialRel }
     await dest.rename(partialRel, rel)
     return { bytes, entryCount }
   } catch (err) {
@@ -135,5 +139,54 @@ export async function readZipEntryCount(file: string): Promise<number> {
     return Number(rec.readBigUInt64LE(32))
   } finally {
     await fh.close()
+  }
+}
+
+/**
+ * Cuts the finished archive at `tempRel` into `targetRel.001`, `.002`, … of `chunkSize` bytes
+ * (each written atomically), removes chunks of an older, longer version, then removes
+ * `tempRel`. On failure every chunk written by this call and `tempRel` are removed.
+ */
+export async function splitIntoChunks(
+  dest: Destination,
+  tempRel: string,
+  targetRel: string,
+  chunkSize: number,
+  signal?: AbortSignal
+): Promise<string[]> {
+  const target = joinRel(targetRel)
+  const slash = target.lastIndexOf('/')
+  const dir = slash < 0 ? '' : target.slice(0, slash)
+  const file = target.slice(slash + 1)
+  const inDir = (name: string): string => (dir ? `${dir}/${name}` : name)
+  const written: string[] = []
+  try {
+    const size = (await dest.stat(tempRel))?.size ?? 0
+    const count = Math.max(1, Math.ceil(size / chunkSize))
+    for (let i = 1; i <= count; i++) {
+      signal?.throwIfAborted()
+      const name = chunkName(file, i)
+      const partial = partialSiblingRel(inDir(name))
+      const start = (i - 1) * chunkSize
+      await pipeline(
+        dest.readStream(tempRel, start, Math.min(size, start + chunkSize) - 1),
+        await dest.writeStream(partial),
+        { signal }
+      )
+      await dest.rename(partial, inDir(name))
+      written.push(name)
+    }
+    const keep = new Set(written)
+    const stale = new RegExp(`^${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.\\d{3}$`)
+    for (const e of await dest.list(dir)) {
+      if (!e.isDir && stale.test(e.name) && !keep.has(e.name)) await dest.remove(inDir(e.name))
+    }
+    await dest.remove(tempRel)
+    return written
+  } catch (err) {
+    for (const name of written) await dest.remove(inDir(name)).catch(() => {})
+    await dest.removePartials(dir, false).catch(() => {})
+    await dest.remove(tempRel).catch(() => {})
+    throw err
   }
 }
