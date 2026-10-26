@@ -11,7 +11,9 @@ export const StateSchema = z.object({
     z.object({
       lastSuccessAt: z.string().nullable(),
       lastAttemptAt: z.string().nullable(),
-      pendingRetry: z.boolean()
+      pendingRetry: z.boolean(),
+      retryAttempts: z.number().int().min(0).default(0),
+      nextRetryAt: z.string().nullable().default(null)
     })
   ),
   sources: z.record(z.string(), z.object({ lastScheduledAt: z.string().nullable() })),

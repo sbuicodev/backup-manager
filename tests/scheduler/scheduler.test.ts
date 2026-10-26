@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { expect, test, vi } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import {
   defaultConfig,
   newDestination,
@@ -27,6 +27,7 @@ async function harness(
   clock: { now: Date }
   battery: { on: boolean }
   avail: Record<string, boolean>
+  checks: Date[]
   outcome: (key: string, o: Outcome) => void
   crashOnRun: { value: boolean }
   stateFile: string
@@ -52,6 +53,7 @@ async function harness(
   const clock = { now: opts.now ?? at(20, 10) }
   const battery = { on: false }
   const avail: Record<string, boolean> = {}
+  const checks: Date[] = []
   const outcomes: Record<string, Outcome> = {}
   const runs: QueuedRun[] = []
   const crashOnRun = { value: false }
@@ -68,7 +70,10 @@ async function harness(
     getConfig: () => cfg,
     stateFile,
     isOnBattery: () => battery.on,
-    isDestinationAvailable: async (id) => avail[id] ?? true,
+    isDestinationAvailable: async (id) => {
+      checks.push(clock.now)
+      return avail[id] ?? true
+    },
     newRunId: () => `run-${++n}`,
     execute: async (run, _signal, onJobEnd): Promise<RunLog> => {
       runs.push(run)
@@ -101,6 +106,7 @@ async function harness(
     clock,
     battery,
     avail,
+    checks,
     crashOnRun,
     stateFile,
     outcome: (key, o) => {
@@ -218,13 +224,13 @@ test('scheduled job skipped for destination-missing → pendingRetry; retried wh
   h.outcome('s0:d0', { status: 'skipped', reason: 'destination-missing' })
   await h.s.start()
   await h.advance(60 * MIN)
-  expect(h.s.status().pendingRetries).toEqual([{ sourceId: 's0', destId: 'd0' }])
+  expect(h.s.status().pendingRetries).toMatchObject([{ sourceId: 's0', destId: 'd0' }])
   h.avail.d0 = false
-  await h.advance(MIN)
+  await h.advance(MIN) // first check (+1 min): still missing → next check +2 min later
   expect(h.runs).toHaveLength(1)
   h.avail.d0 = true
   h.outcome('s0:d0', { status: 'completed' })
-  await h.advance(MIN)
+  await h.advance(2 * MIN)
   expect(h.runs.map((r) => r.trigger)).toEqual(['scheduled', 'retry'])
   expect(h.s.status().pendingRetries).toEqual([])
   await h.advance(MIN)
@@ -353,4 +359,107 @@ test('a run whose executor throws still clears activeRun and reports a failed ru
   expect(finished).toHaveLength(1)
   expect(finished[0]).toMatchObject({ status: 'failed', trigger: 'manual' })
   expect(finished[0].jobs[0]).toMatchObject({ status: 'failed', reason: 'error', error: 'boom' })
+})
+
+describe('retry timing', () => {
+  async function skipped(): Promise<Awaited<ReturnType<typeof harness>>> {
+    const h = await harness([daily('11:00')])
+    h.outcome('s0:d0', { status: 'skipped', reason: 'destination-missing' })
+    await h.s.start()
+    await h.advance(60 * MIN) // 11:00 scheduled run → skipped → pending retry
+    h.avail.d0 = false
+    h.checks.length = 0
+    return h
+  }
+  const minutesAfter11 = (h: Awaited<ReturnType<typeof harness>>): number[] =>
+    h.checks.map((d) => (d.getTime() - at(20, 11).getTime()) / MIN)
+
+  test('an old state file without retry fields loads with defaults', async () => {
+    const h = await harness([null])
+    const st = emptyState()
+    st.jobs['s0:d0'] = { lastSuccessAt: null, lastAttemptAt: null, pendingRetry: true } as never
+    await saveState(h.stateFile, st)
+    const loaded = await loadState(h.stateFile, h.cfg)
+    expect(loaded.jobs['s0:d0']).toMatchObject({ retryAttempts: 0, nextRetryAt: null })
+  })
+
+  test('checks at +1, +2, +3, +4, +5 min after the skip, then every 5 min', async () => {
+    const h = await skipped()
+    for (let i = 0; i < 25; i++) await h.advance(MIN)
+    expect(minutesAfter11(h)).toEqual([1, 3, 6, 10, 15, 20, 25])
+  })
+
+  test('destination back at a check → retry run queued', async () => {
+    const h = await skipped()
+    await h.advance(MIN)
+    h.avail.d0 = true
+    h.outcome('s0:d0', { status: 'completed' })
+    await h.advance(MIN)
+    expect(h.runs.map((r) => r.trigger)).toEqual(['scheduled'])
+    await h.advance(MIN)
+    expect(h.runs.map((r) => r.trigger)).toEqual(['scheduled', 'retry'])
+  })
+
+  test('wake from sleep makes pending retries due now and restarts the sequence', async () => {
+    const h = await skipped()
+    for (let i = 0; i < 7; i++) await h.advance(MIN) // checks at 1, 3, 6 → next at 10
+    h.clock.now = new Date(h.clock.now.getTime() + 30_000)
+    await h.s.onResume()
+    await h.s.whenIdle()
+    for (let i = 0; i < 3; i++) await h.advance(MIN)
+    expect(minutesAfter11(h)).toEqual([1, 3, 6, 7.5, 9.5])
+  })
+
+  test('AC power behaves like wake', async () => {
+    const h = await skipped()
+    await h.advance(MIN)
+    await h.advance(MIN)
+    await h.s.onPowerChange()
+    await h.s.whenIdle()
+    expect(minutesAfter11(h)).toEqual([1, 2])
+  })
+
+  test('a retry that fails again continues the sequence instead of restarting', async () => {
+    const h = await skipped()
+    for (let i = 0; i < 3; i++) await h.advance(MIN) // checks at 1, 3 → next due at 6
+    h.avail.d0 = true // available at the check, but the retry run finds it missing again
+    await h.advance(3 * MIN) // check at 6 → retry run → skipped again
+    expect(h.runs.map((r) => r.trigger)).toEqual(['scheduled', 'retry'])
+    h.avail.d0 = false
+    h.checks.length = 0
+    for (let i = 0; i < 5; i++) await h.advance(MIN)
+    // every check advances the sequence, so after the check at 6 the next one is at 10
+    expect(minutesAfter11(h)).toEqual([10])
+  })
+
+  test("the source's next regular slot clears the pending retry and its timing", async () => {
+    const h = await skipped()
+    for (let i = 0; i < 3; i++) await h.advance(MIN)
+    h.outcome('s0:d0', { status: 'completed' })
+    h.clock.now = at(21, 10, 59)
+    await h.advance(MIN) // 11:00 next day: regular run
+    const st = await loadState(h.stateFile, h.cfg)
+    expect(st.jobs['s0:d0']).toMatchObject({
+      pendingRetry: false,
+      retryAttempts: 0,
+      nextRetryAt: null
+    })
+  })
+
+  test('nextRetryAt far in the future (clock moved back) is treated as due', async () => {
+    const h = await skipped()
+    await h.advance(MIN) // check at +1 → next at +3
+    h.clock.now = new Date(h.clock.now.getTime() - 60 * MIN) // clock jumps back an hour
+    h.checks.length = 0
+    await h.advance(MIN)
+    expect(h.checks).toHaveLength(1)
+  })
+
+  test('status exposes nextRetryAt for each pending retry', async () => {
+    const h = await skipped()
+    await h.advance(MIN)
+    expect(h.s.status().pendingRetries).toEqual([
+      { sourceId: 's0', destId: 'd0', nextRetryAt: at(20, 11, 3).toISOString() }
+    ])
+  })
 })

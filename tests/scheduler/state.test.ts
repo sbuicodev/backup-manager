@@ -23,7 +23,13 @@ function config(): ReturnType<typeof defaultConfig> {
 const sample = (): State => ({
   version: 1,
   jobs: {
-    's1:d1': { lastSuccessAt: '2026-10-25T10:00:00.000Z', lastAttemptAt: null, pendingRetry: true }
+    's1:d1': {
+      lastSuccessAt: '2026-10-25T10:00:00.000Z',
+      lastAttemptAt: null,
+      pendingRetry: true,
+      retryAttempts: 0,
+      nextRetryAt: null
+    }
   },
   sources: { s1: { lastScheduledAt: '2026-10-25T02:00:00.000Z' } },
   pausedUntil: 'forever',
@@ -57,8 +63,20 @@ test('invalid JSON → empty state, bad file kept as state.json.bad', async () =
 test('unknown source/destination ids are dropped', async () => {
   const file = join(await tmpDir(), 'state.json')
   const s = sample()
-  s.jobs['s1:gone'] = { lastSuccessAt: null, lastAttemptAt: null, pendingRetry: false }
-  s.jobs['gone:d1'] = { lastSuccessAt: null, lastAttemptAt: null, pendingRetry: false }
+  s.jobs['s1:gone'] = {
+    lastSuccessAt: null,
+    lastAttemptAt: null,
+    pendingRetry: false,
+    retryAttempts: 0,
+    nextRetryAt: null
+  }
+  s.jobs['gone:d1'] = {
+    lastSuccessAt: null,
+    lastAttemptAt: null,
+    pendingRetry: false,
+    retryAttempts: 0,
+    nextRetryAt: null
+  }
   s.sources.gone = { lastScheduledAt: null }
   s.activeRun = { runId: 'r1', jobs: ['s1:d1', 'gone:d1'] }
   await saveState(file, s)

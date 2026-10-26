@@ -76,7 +76,7 @@ export type SchedulerStatus = {
   pending: QueuedRun[]
   pausedUntil: string | null // ISO or "forever"
   nextRuns: Array<{ sourceId: string; at: string | null }> // null = manual only
-  pendingRetries: JobRequest[]
+  pendingRetries: Array<JobRequest & { nextRetryAt: string | null }>
 }
 
 export type RunSummary = Omit<RunLog, 'jobs'> & { jobCount: number }

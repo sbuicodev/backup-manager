@@ -29,6 +29,14 @@ export type SchedulerDeps = {
 
 const RETRY_REASONS = new Set(['destination-missing', 'destination-lost'])
 
+export const RETRY_STEP_MS = 60_000
+export const RETRY_MAX_MS = 300_000
+
+/** Delay before the next availability check after `attempts` checks: 1, 2, 3, 4, then 5 min. */
+export function retryDelayMs(attempts: number): number {
+  return Math.min(RETRY_STEP_MS * (attempts + 1), RETRY_MAX_MS)
+}
+
 export class Scheduler {
   private state: State = emptyState()
   private queue: RunQueue
@@ -73,11 +81,22 @@ export class Scheduler {
   }
 
   onResume(): Promise<void> {
+    this.resetRetryTiming()
     return this.tick()
   }
 
   onPowerChange(): Promise<void> {
+    this.resetRetryTiming()
     return this.tick()
+  }
+
+  /** Wake or AC power: drives often come back now, so every pending retry is due again. */
+  private resetRetryTiming(): void {
+    for (const js of Object.values(this.state.jobs)) {
+      if (!js.pendingRetry) continue
+      js.retryAttempts = 0
+      js.nextRetryAt = null
+    }
   }
 
   runNow(sourceIds?: string[]): QueuedRun | null {
@@ -119,7 +138,7 @@ export class Scheduler {
       }),
       pendingRetries: Object.entries(this.state.jobs)
         .filter(([, j]) => j.pendingRetry)
-        .map(([k]) => parseJobKey(k))
+        .map(([k, j]) => ({ ...parseJobKey(k), nextRetryAt: j.nextRetryAt }))
     }
   }
 
@@ -160,7 +179,9 @@ export class Scheduler {
     return (this.state.jobs[key] ??= {
       lastSuccessAt: null,
       lastAttemptAt: null,
-      pendingRetry: false
+      pendingRetry: false,
+      retryAttempts: 0,
+      nextRetryAt: null
     })
   }
 
@@ -196,7 +217,7 @@ export class Scheduler {
       allLate &&= check.late
       this.state.sources[source.id] = { lastScheduledAt: check.slot.toISOString() }
       for (const j of this.jobsFor(config, source)) {
-        this.job(jobKey(j)).pendingRetry = false
+        clearRetry(this.job(jobKey(j)))
         due.push(j)
       }
     }
@@ -210,6 +231,13 @@ export class Scheduler {
         const source = config.sources.find((s) => s.id === j.sourceId)
         const dest = config.destinations.find((d) => d.id === j.destId)
         if (!source?.enabled || !source.retryWhenAvailable || !dest?.enabled) continue
+        const next = js.nextRetryAt === null ? null : new Date(js.nextRetryAt).getTime()
+        // A due time beyond the cap means the clock moved back: check now rather than stall.
+        const due = next === null || next <= now.getTime() || next > now.getTime() + RETRY_MAX_MS
+        if (!due) continue
+        // Every check moves the sequence on, so a retry that fails again waits its turn.
+        js.retryAttempts += 1
+        js.nextRetryAt = new Date(now.getTime() + retryDelayMs(js.retryAttempts)).toISOString()
         if (await this.deps.isDestinationAvailable(j.destId)) retries.push(j)
       }
     }
@@ -267,10 +295,14 @@ export class Scheduler {
     js.lastAttemptAt = now
     if (r.status === 'completed' || r.status === 'completed-with-warnings') {
       js.lastSuccessAt = now
-      js.pendingRetry = false
+      clearRetry(js)
     } else if (r.reason && RETRY_REASONS.has(r.reason) && run.trigger !== 'manual') {
       const source = this.deps.getConfig().sources.find((s) => s.id === r.sourceId)
-      if (source?.retryWhenAvailable) js.pendingRetry = true
+      if (source?.retryWhenAvailable && !js.pendingRetry) {
+        js.pendingRetry = true
+        js.retryAttempts = 0
+        js.nextRetryAt = new Date(this.deps.now().getTime() + RETRY_STEP_MS).toISOString()
+      }
     }
     if (this.state.activeRun) {
       this.state.activeRun.jobs = this.state.activeRun.jobs.filter((k) => k !== key)
@@ -278,4 +310,10 @@ export class Scheduler {
     void this.save()
     this.changed()
   }
+}
+
+function clearRetry(js: JobState): void {
+  js.pendingRetry = false
+  js.retryAttempts = 0
+  js.nextRetryAt = null
 }
