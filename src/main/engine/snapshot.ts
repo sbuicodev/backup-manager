@@ -15,7 +15,7 @@ import { formatTimestamp, uniqueTimestampName } from './naming'
 import { chunkName, packFresh, partBaseName, type PartPlan } from './packaging/parts'
 import { computeZipTargets } from './packaging/targets'
 import { splitIntoChunks, writeZip } from './packaging/zip'
-import { readSnapshotIndex, writeSnapshotIndex } from './snapshot-index'
+import { readSnapshotIndex, removeSnapshotIndex, writeSnapshotIndex } from './snapshot-index'
 
 type ArchivePlan = { base: string; parts: PartPlan[] }
 
@@ -179,12 +179,18 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
           run.change('removed', rel)
           await run.settle()
         }
-        await writeSnapshotIndex(
-          ctx.indexDir,
-          source.id,
-          ctx.destId,
-          [...written.values()].map((w) => w.f)
-        )
+        // The snapshot is already in place: an index failure only costs the next diff.
+        try {
+          await writeSnapshotIndex(
+            ctx.indexDir,
+            source.id,
+            ctx.destId,
+            [...written.values()].map((w) => w.f)
+          )
+        } catch (err) {
+          console.error('snapshot index could not be written', err)
+          await removeSnapshotIndex(ctx.indexDir, source.id, ctx.destId)
+        }
       }
       return run.result()
     })

@@ -39,6 +39,15 @@ export async function writeSnapshotIndex(
   await atomicWriteBuffer(join(dir, indexFileName(sourceId, destId)), data)
 }
 
+/** Deletes one pair's index (best effort), so a stale list is never used for a diff. */
+export async function removeSnapshotIndex(
+  dir: string,
+  sourceId: string,
+  destId: string
+): Promise<void> {
+  await rm(join(dir, indexFileName(sourceId, destId)), { force: true }).catch(() => {})
+}
+
 /** Deletes indexes whose `sourceId__destId` is not in `keep`; returns how many were deleted. */
 export async function pruneSnapshotIndexes(dir: string, keep: Set<string>): Promise<number> {
   let names: string[]

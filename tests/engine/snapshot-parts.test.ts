@@ -145,3 +145,13 @@ describe('snapshot change diff', () => {
     ])
   })
 })
+
+test('a snapshot index that cannot be written does not fail a finished snapshot', async () => {
+  const w = await world('copy', { a: 10 }, null)
+  await writeFile(w.index, 'not a folder') // the index folder path is a file
+  const ctx = await ctxFor(w.source, w.dest, NOW)
+  ctx.indexDir = w.index
+  const r = await (await prepareSnapshot(ctx)).execute(exec())
+  expect(r.status).toBe('completed')
+  expect(await ls(join(w.root, 'S'))).toEqual([TS])
+})
