@@ -101,6 +101,8 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     electronApp.setAppUserModelId('com.stefano.backupmanager')
+    // Packaged builds take the icon from build/; in development the Dock would show Electron's.
+    if (is.dev && process.platform === 'darwin') app.dock?.setIcon(icon)
     app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
 
     let tray: ReturnType<typeof createTray> | null = null
