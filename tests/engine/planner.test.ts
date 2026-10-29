@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { defaultConfig, newDestination, newSource, type Config } from '@shared/schema'
-import { planRun } from '../../src/main/engine/planner'
+import { destinationsFor, planRun } from '../../src/main/engine/planner'
 import { makeTree, tmpDir } from '../helpers/fs'
 
 async function world(): Promise<{
@@ -119,4 +119,18 @@ test('global excludes apply unless disabled', async () => {
   expect((await planRun(cfg, {})).plan.jobs[0].counts.copy).toBe(1)
   cfg.sources[0].useGlobalExcludes = false
   expect((await planRun(cfg, {})).plan.jobs[0].counts.copy).toBe(2)
+})
+
+test('destinationsFor: own exclusive destinations always; others only shared ones', () => {
+  const cfg = defaultConfig()
+  const a = newSource('/a', 'A', [])
+  const b = { ...newSource('/b', 'B', ['A']), destinationIds: [] as string[] }
+  const shared = newDestination('/shared', 'Shared')
+  const ownA = { ...newDestination('/own-a', 'OwnA'), ownerSourceId: a.id }
+  const ownB = { ...newDestination('/own-b', 'OwnB'), ownerSourceId: b.id }
+  const ownBOff = { ...newDestination('/own-b2', 'OwnB2'), ownerSourceId: b.id, enabled: false }
+  cfg.sources.push(a, b)
+  cfg.destinations.push(shared, ownA, ownB, ownBOff)
+  expect(destinationsFor(cfg, a).map((d) => d.name)).toEqual(['Shared', 'OwnA'])
+  expect(destinationsFor(cfg, b).map((d) => d.name)).toEqual(['OwnB'])
 })

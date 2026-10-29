@@ -321,3 +321,23 @@ test('an invalid config at startup keeps every snapshot index', async () => {
   expect(await readdir(services.paths.snapshotIndex)).toHaveLength(1)
   services.stop()
 })
+
+test("start keeps the snapshot index of a source's exclusive destination", async () => {
+  const base = await tmpDir()
+  const cfg = defaultConfig()
+  const s = { ...newSource(join(base, 'src'), 'S', []), destinationIds: [] as string[] }
+  const d = { ...newDestination(join(base, 'own'), 'Own'), ownerSourceId: s.id }
+  cfg.sources.push(s)
+  cfg.destinations.push(d)
+  await makeTree(base, { 'user/config.json': JSON.stringify(cfg) })
+  await writeSnapshotIndex(join(base, 'user', 'snapshot-index'), s.id, d.id, [])
+  const services = await createServices({
+    userDataDir: join(base, 'user'),
+    platform: { now: () => new Date(), setInterval: () => () => {}, isOnBattery: () => false },
+    broadcast: () => {},
+    onRunFinished: () => {}
+  })
+  await services.start()
+  expect(await readdir(services.paths.snapshotIndex)).toHaveLength(1)
+  services.stop()
+})

@@ -8,7 +8,7 @@ import { FsDestination } from './engine/destination'
 import { runBackup } from './engine/executor'
 import { getRun, listRuns, newRunId } from './engine/history'
 import { readChanges } from './engine/changes'
-import { planRun } from './engine/planner'
+import { planRun, targets } from './engine/planner'
 import { pruneSnapshotIndexes } from './engine/snapshot-index'
 import { Scheduler, type SchedulerDeps } from './scheduler/scheduler'
 
@@ -150,9 +150,7 @@ export async function createServices(opts: ServicesOptions): Promise<Services> {
       const cfg = current()
       const pairs = new Set(
         cfg.sources.flatMap((s) =>
-          cfg.destinations
-            .filter((d) => s.destinationIds === 'all' || s.destinationIds.includes(d.id))
-            .map((d) => `${s.id}__${d.id}`)
+          cfg.destinations.filter((d) => targets(s, d)).map((d) => `${s.id}__${d.id}`)
         )
       )
       await pruneSnapshotIndexes(paths.snapshotIndex, pairs)

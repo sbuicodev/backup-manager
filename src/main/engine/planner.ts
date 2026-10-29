@@ -27,11 +27,15 @@ export function jobKind(source: Source): JobKind {
   return `${source.mode}-${source.packaging === 'copy' ? 'copy' : 'zip'}`
 }
 
+/** Whether a source targets a destination (enabled or not): its own ones always, shared ones as chosen. */
+export function targets(source: Source, d: DestinationConfig): boolean {
+  if (d.ownerSourceId !== null) return d.ownerSourceId === source.id
+  return source.destinationIds === 'all' || source.destinationIds.includes(d.id)
+}
+
 /** Enabled destinations a source targets, in config order. */
 export function destinationsFor(config: Config, source: Source): DestinationConfig[] {
-  return config.destinations.filter(
-    (d) => d.enabled && (source.destinationIds === 'all' || source.destinationIds.includes(d.id))
-  )
+  return config.destinations.filter((d) => d.enabled && targets(source, d))
 }
 
 function selectPairs(config: Config, request: RunRequest): [Source, DestinationConfig][] {

@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
   defaultModeFor,
   newSource,
   slugify,
   validateConfig,
   type Config,
+  type Destination,
   type Schedule,
   type Source,
   type Weekday
@@ -21,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import { DestinationDialog } from '@/components/DestinationDialog'
 import { SizeInput } from '@/components/SizeInput'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -165,6 +167,12 @@ export function SourceEditor({
   const [modeTouched, setModeTouched] = useState(initial !== null)
   const [excludes, setExcludes] = useState(s.excludes.join('\n'))
   const [errors, setErrors] = useState<string[]>([])
+  // Destinations only this source uses: edited here, saved with the source, dropped on Cancel.
+  const [own, setOwn] = useState<Destination[]>(() =>
+    config.destinations.filter((d) => d.ownerSourceId !== null && d.ownerSourceId === s.id)
+  )
+  const [editingDest, setEditingDest] = useState<Destination | 'new' | null>(null)
+  const shared = config.destinations.filter((d) => d.ownerSourceId === null)
   const patch = (p: Partial<Source>): void => setS((prev) => ({ ...prev, ...p }))
 
   const setName = (name: string): void =>
@@ -192,6 +200,7 @@ export function SourceEditor({
     }
     const next: Config = {
       ...config,
+      destinations: [...config.destinations.filter((d) => d.ownerSourceId !== source.id), ...own],
       sources: initial
         ? config.sources.map((x) => (x.id === source.id ? source : x))
         : [...config.sources, source]
@@ -443,20 +452,67 @@ export function SourceEditor({
 
           <Separator />
           <Section title="Destinations">
+            {/* min-w-0 + overflow-hidden: a long path truncates instead of widening the sheet. */}
+            <div className="grid min-w-0 gap-2 overflow-hidden">
+              <Label>Only for this source</Label>
+              {own.map((d) => (
+                <div key={d.id} className="flex min-w-0 items-center gap-2 text-sm">
+                  <Switch
+                    checked={d.enabled}
+                    aria-label={`Use ${d.name}`}
+                    onCheckedChange={(enabled) =>
+                      setOwn((o) => o.map((x) => (x.id === d.id ? { ...x, enabled } : x)))
+                    }
+                  />
+                  <span className="font-medium">{d.name}</span>
+                  <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
+                    {d.path}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Edit ${d.name}`}
+                    onClick={() => setEditingDest(d)}
+                  >
+                    <Pencil />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Remove ${d.name}`}
+                    onClick={() => setOwn((o) => o.filter((x) => x.id !== d.id))}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="justify-self-start"
+                onClick={() => setEditingDest('new')}
+              >
+                <Plus /> Add destination for this source
+              </Button>
+              <p className="text-muted-foreground text-xs">
+                Always used by this source and never by others.
+              </p>
+            </div>
+            <Label className="mt-2">Shared destinations</Label>
             <label className="flex items-center gap-2 text-sm">
               <Checkbox
                 checked={explicitDests === null}
                 onCheckedChange={(c) =>
                   patch({
-                    destinationIds: c === true ? 'all' : config.destinations.map((d) => d.id)
+                    destinationIds: c === true ? 'all' : shared.map((d) => d.id)
                   })
                 }
               />
-              All destinations
+              All shared destinations
             </label>
             {explicitDests !== null && (
               <div className="grid gap-2 pl-6">
-                {config.destinations.map((d) => (
+                {shared.map((d) => (
                   <label key={d.id} className="flex items-center gap-2 text-sm">
                     <Checkbox
                       checked={explicitDests.includes(d.id)}
@@ -579,6 +635,20 @@ export function SourceEditor({
           </Button>
         </SheetFooter>
       </SheetContent>
+      {editingDest && (
+        <DestinationDialog
+          initial={editingDest === 'new' ? null : editingDest}
+          ownerName={s.name.trim() || 'this source'}
+          ownerSourceId={s.id}
+          onSave={async (d) => {
+            setOwn((o) =>
+              o.some((x) => x.id === d.id) ? o.map((x) => (x.id === d.id ? d : x)) : [...o, d]
+            )
+            return true
+          }}
+          onClose={() => setEditingDest(null)}
+        />
+      )}
     </Sheet>
   )
 }

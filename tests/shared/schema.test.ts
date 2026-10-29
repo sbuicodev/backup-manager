@@ -299,3 +299,31 @@ describe('zip part limits', () => {
     })
   })
 })
+
+describe('source-exclusive destinations', () => {
+  test('destinations are shared by default; an old config loads with no owner', () => {
+    expect(newDestination('/d', 'D').ownerSourceId).toBeNull()
+    const old = defaultConfig() as unknown as { destinations: unknown[] }
+    old.destinations.push({ id: 'd1', name: 'D', path: '/d', enabled: true })
+    const r = validateConfig(old)
+    expect(r.ok && r.config.destinations[0].ownerSourceId).toBeNull()
+  })
+
+  test('the owner must be an existing source', () => {
+    const cfg = cfgWith((c) =>
+      c.destinations.push({ ...newDestination('/d', 'D'), ownerSourceId: 'gone' })
+    )
+    expect(errorsOf(cfg).join('\n')).toMatch(/owner/i)
+  })
+
+  test("a source cannot select another source's exclusive destination", () => {
+    const cfg = cfgWith((c) => {
+      const a = newSource('/a', 'A', [])
+      const b = newSource('/b', 'B', ['A'])
+      const own = { ...newDestination('/d', 'D'), ownerSourceId: a.id }
+      c.sources.push(a, { ...b, destinationIds: [own.id] })
+      c.destinations.push(own)
+    })
+    expect(errorsOf(cfg).join('\n')).toMatch(/only for "A"/)
+  })
+})

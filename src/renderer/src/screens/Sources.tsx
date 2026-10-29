@@ -50,6 +50,9 @@ export function Sources({
   const now = useNow()
   const [editing, setEditing] = useState<Source | 'new' | null>(null)
   const [deleting, setDeleting] = useState<Source | null>(null)
+  const ownedByDeleting = deleting
+    ? config.destinations.filter((d) => d.ownerSourceId === deleting.id)
+    : []
 
   const save = async (next: Config): Promise<void> => {
     const errors = await cfg.save(next)
@@ -169,6 +172,8 @@ export function Sources({
             <AlertDialogTitle>Remove “{deleting?.name}”?</AlertDialogTitle>
             <AlertDialogDescription>
               It will no longer be backed up. Existing backups are not deleted.
+              {ownedByDeleting.length > 0 &&
+                ` Its own destinations are removed too: ${ownedByDeleting.map((d) => d.name).join(', ')}.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -178,6 +183,7 @@ export function Sources({
                 deleting &&
                 void save({
                   ...config,
+                  destinations: config.destinations.filter((d) => d.ownerSourceId !== deleting.id),
                   sources: config.sources.filter((x) => x.id !== deleting.id)
                 }).then(() => setDeleting(null))
               }

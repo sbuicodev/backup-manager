@@ -45,7 +45,9 @@ export const DestinationSchema = z.object({
   path: AbsolutePath,
   enabled: z.boolean(),
   zipPartLimitBytes: PartBytes.default(null),
-  forceChunkOversized: z.boolean().default(false)
+  forceChunkOversized: z.boolean().default(false),
+  /** The source this destination belongs to exclusively; null = shared by every source. */
+  ownerSourceId: z.string().nullable().default(null)
 })
 
 export const SourceSchema = z.object({
@@ -112,15 +114,33 @@ export const ConfigSchema = z
       }
       slugs.set(key, i)
     })
-    const destIds = new Set(cfg.destinations.map((d) => d.id))
+    const destById = new Map(cfg.destinations.map((d) => [d.id, d]))
+    const sourceById = new Map(cfg.sources.map((s) => [s.id, s]))
+    cfg.destinations.forEach((d, i) => {
+      if (d.ownerSourceId !== null && !sourceById.has(d.ownerSourceId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['destinations', i, 'ownerSourceId'],
+          message: `owner source "${d.ownerSourceId}" does not exist`
+        })
+      }
+    })
     cfg.sources.forEach((s, i) => {
       if (s.destinationIds !== 'all') {
         for (const id of s.destinationIds) {
-          if (!destIds.has(id)) {
+          const d = destById.get(id)
+          if (!d) {
             ctx.addIssue({
               code: 'custom',
               path: ['sources', i, 'destinationIds'],
               message: `unknown destination "${id}"`
+            })
+          } else if (d.ownerSourceId !== null && d.ownerSourceId !== s.id) {
+            const owner = sourceById.get(d.ownerSourceId)?.name ?? d.ownerSourceId
+            ctx.addIssue({
+              code: 'custom',
+              path: ['sources', i, 'destinationIds'],
+              message: `destination "${d.name}" is only for "${owner}"`
             })
           }
         }
@@ -211,7 +231,8 @@ export function newDestination(path: string, name: string): Destination {
     path,
     enabled: true,
     zipPartLimitBytes: null,
-    forceChunkOversized: false
+    forceChunkOversized: false,
+    ownerSourceId: null
   }
 }
 
