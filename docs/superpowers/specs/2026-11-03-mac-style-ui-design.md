@@ -48,7 +48,8 @@ how backups are made.
     for a drive or finished with warnings), red (failed), grey ring (not set up), a small progress
     ring while it runs, and a pause glyph when disabled.
   - **Drives**: the shared destinations. Destinations exclusive to one backup are not listed here;
-    they appear on that backup's page (see §4). A drive that is not connected is greyed out.
+    they appear on that backup's page (see §4). A drive that is not connected is greyed out. A **+**
+    on the section heading adds a shared drive (the existing destination dialog).
   - **Activity**.
   - At the bottom: **New backup** (opens the assistant) and a gear for **Settings** (also ⌘, on
     macOS through the app menu).
