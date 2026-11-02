@@ -1,13 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  FolderInput,
-  HardDrive,
-  History as HistoryIcon,
-  Pause,
-  Play,
-  Settings as SettingsIcon
-} from 'lucide-react'
-import type { Screen } from '@shared/ipc'
+import { Archive, Pause, Play, Plus, Square } from 'lucide-react'
 import type { Config } from '@shared/schema'
 import type { SchedulerStatus } from '@shared/types'
 import { Button } from '@/components/ui/button'
@@ -17,8 +9,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Sidebar, type NavItem } from '@/components/Sidebar'
+import { AppSidebar } from '@/components/AppSidebar'
 import { TopBar } from '@/components/TopBar'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useAvailability } from '@/hooks/useAvailability'
+import { useLatestResults } from '@/hooks/useLatestResults'
+import { planPreview, resolveSelection, type Selection } from '@/lib/selection'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useConfig } from '@/hooks/useConfig'
@@ -30,17 +26,43 @@ import { cn } from '@/lib/utils'
 import { useRunProgress } from '@/hooks/useRunProgress'
 import { Destinations } from '@/screens/Destinations'
 import { History } from '@/screens/History'
-import { Run } from '@/screens/Run'
 import { Settings } from '@/screens/Settings'
 import { Sources } from '@/screens/Sources'
 
-const NAV: NavItem[] = [
-  { id: 'sources', label: 'Sources', icon: FolderInput },
-  { id: 'destinations', label: 'Destinations', icon: HardDrive },
-  { id: 'run', label: 'Run', icon: Play },
-  { id: 'history', label: 'History', icon: HistoryIcon },
-  { id: 'settings', label: 'Settings', icon: SettingsIcon }
-]
+/** Back up now, or Stop while a run is active; hovering previews what a run would do. */
+function BackUpNowButton({ running }: { running: boolean }): React.JSX.Element {
+  const [preview, setPreview] = useState('Checking what to back up…')
+  if (running) {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        className="app-no-drag"
+        onClick={() => void api.run.cancel()}
+      >
+        <Square /> Stop
+      </Button>
+    )
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          size="sm"
+          className="app-no-drag"
+          onMouseEnter={() => {
+            setPreview('Checking what to back up…')
+            void api.run.plan().then((p) => setPreview(planPreview(p)))
+          }}
+          onClick={() => void api.run.start()}
+        >
+          <Play /> Back up now
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{preview}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 function statusText(status: SchedulerStatus | null, config: Config, now: Date): string {
   if (!status) return ''
@@ -78,7 +100,7 @@ function SchedulerStatusControls({
         )}
       />
       <span className="text-muted-foreground truncate">{statusText(status, config, now)}</span>
-      <div className="app-no-drag shrink-0">
+      <div className="app-no-drag flex shrink-0 gap-2">
         {paused ? (
           <Button size="sm" variant="outline" onClick={() => void api.scheduler.resume()}>
             <Play /> Resume
@@ -86,7 +108,7 @@ function SchedulerStatusControls({
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline">
+              <Button size="sm" variant="ghost">
                 <Pause /> Pause
               </Button>
             </DropdownMenuTrigger>
@@ -104,8 +126,25 @@ function SchedulerStatusControls({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        <BackUpNowButton running={status?.active != null} />
       </div>
     </>
+  )
+}
+
+/** First launch: nothing to back up yet. */
+function EmptyState({ onNew }: { onNew: () => void }): React.JSX.Element {
+  return (
+    <div className="mx-auto mt-24 grid max-w-sm justify-items-center gap-3 text-center">
+      <Archive className="text-muted-foreground size-10" />
+      <h1 className="text-lg font-semibold">Choose what to back up</h1>
+      <p className="text-muted-foreground text-sm">
+        Pick files and folders, then where they should go. It takes a minute.
+      </p>
+      <Button onClick={onNew}>
+        <Plus /> New backup
+      </Button>
+    </div>
   )
 }
 
@@ -189,26 +228,36 @@ function App(): React.JSX.Element {
   const cfg = useConfig()
   const status = useSchedulerStatus()
   const progress = useRunProgress()
-  const [screen, setScreen] = useState<Screen>('sources')
-  const [screenArg, setScreenArg] = useState<string | undefined>()
+  const results = useLatestResults()
+  const availability = useAvailability()
+  const [picked, setPicked] = useState<Selection | null>(null)
+  const [runId, setRunId] = useState<string | undefined>()
   const [collapsed, toggleSidebar] = useSidebarCollapsed()
   const glass = cfg.state?.ok ? cfg.state.config.settings.glass : false
   useGlassClasses(glass)
 
   useEffect(
     () =>
+      // Notifications open a run in Activity; anything else goes to its new home.
       api.app.onNavigate((s, arg) => {
-        setScreen(s)
-        setScreenArg(arg)
+        setPicked(s === 'settings' ? { kind: 'settings' } : { kind: 'activity' })
+        setRunId(s === 'history' ? arg : undefined)
       }),
     []
   )
+  useEffect(() => api.app.onSelect((sel) => setPicked(sel)), [])
 
   if (!cfg.state) return <div />
   if (!cfg.state.ok) {
     return <ConfigError errors={cfg.state.errors} path={cfg.state.path} onReload={cfg.reload} />
   }
   const config = cfg.state.config
+  const selection = resolveSelection(picked, config)
+  const select = (s: Selection): void => {
+    setPicked(s)
+    setRunId(undefined)
+  }
+  const runningSourceId = status?.active ? (progress.currentJob?.sourceId ?? null) : null
 
   return (
     <TooltipProvider>
@@ -217,32 +266,37 @@ function App(): React.JSX.Element {
           <SchedulerStatusControls status={status} config={config} />
         </TopBar>
         <div className="flex min-h-0 flex-1">
-          <Sidebar
-            items={NAV}
-            current={screen}
+          <AppSidebar
+            cfg={cfg}
+            config={config}
+            selection={selection}
+            onSelect={select}
             collapsed={collapsed}
-            onSelect={(id) => {
-              setScreen(id)
-              setScreenArg(undefined)
-            }}
+            status={status}
+            results={results}
+            availability={availability}
+            runningSourceId={runningSourceId}
           />
           <main className="flex min-w-0 flex-1 flex-col">
             <div className="flex-1 overflow-auto p-6">
               {/* Pages sit in one centred column so wide windows don't leave them on the left. */}
               <div className="mx-auto w-full max-w-5xl">
-                {screen === 'destinations' && <Destinations cfg={cfg} config={config} />}
-                {screen === 'settings' && (
-                  <Settings cfg={cfg} config={config} path={cfg.state.path} />
+                {selection.kind === 'empty' && <EmptyState onNew={() => select({ kind: 'new' })} />}
+                {/* Until their new pages land, these show the previous screens. */}
+                {(selection.kind === 'backup' || selection.kind === 'new') && (
+                  <Sources cfg={cfg} config={config} status={status} />
                 )}
-                {screen === 'sources' && <Sources cfg={cfg} config={config} status={status} />}
-                {screen === 'run' && <Run config={config} status={status} progress={progress} />}
-                {screen === 'history' && (
+                {selection.kind === 'drive' && <Destinations cfg={cfg} config={config} />}
+                {selection.kind === 'activity' && (
                   <History
                     config={config}
                     status={status}
-                    openId={screenArg}
+                    openId={runId}
                     refreshKey={progress.lastLog?.id ?? null}
                   />
+                )}
+                {selection.kind === 'settings' && (
+                  <Settings cfg={cfg} config={config} path={cfg.state.path} />
                 )}
               </div>
             </div>
