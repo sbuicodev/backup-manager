@@ -15,7 +15,7 @@ import icon from '../../resources/icon.png?asset'
 import { createHandlers } from './handlers'
 import { registerIpc } from './ipc'
 import { notifyRunFinished, setLaunchAtLogin, startedHidden } from './os'
-import { titleBarOptions, titleBarOverlay, windowVibrancy } from './os-helpers'
+import { titleBarOptions, titleBarOverlay, windowMaterial } from './os-helpers'
 import { createServices, type Services } from './services'
 import { createTray } from './tray'
 
@@ -43,9 +43,16 @@ function navigate(screen: Screen, arg?: string): void {
   else go()
 }
 
-/** The window's macOS translucency for the current glass setting. */
-function vibrancy(): 'under-window' | null {
-  return windowVibrancy(process.platform, services?.config().settings.glass ?? 'off')
+/** Native material for the current glass setting (applied at creation and on change). */
+function material(): ReturnType<typeof windowMaterial> {
+  return windowMaterial(process.platform, services?.config().settings.glass ?? false)
+}
+
+/** Applies the glass setting to an open window. */
+function applyMaterial(win: BrowserWindow): void {
+  const m = material()
+  if (m.vibrancy !== undefined) win.setVibrancy(m.vibrancy)
+  if (m.backgroundMaterial !== undefined) win.setBackgroundMaterial(m.backgroundMaterial)
 }
 
 function createWindow(): void {
@@ -59,14 +66,11 @@ function createWindow(): void {
     title: 'Backup Manager',
     // The app draws its own top bar; the OS keeps its native window controls in it.
     ...titleBarOptions(process.platform, nativeTheme.shouldUseDarkColors),
-    // macOS glass: the page is transparent where the native translucency should show.
-    ...(vibrancy()
-      ? {
-          vibrancy: vibrancy()!,
-          visualEffectState: 'active' as const,
-          backgroundColor: '#00000000'
-        }
-      : {}),
+    // Glass: the page is see-through where the native material should show.
+    ...(material().vibrancy ? { vibrancy: material().vibrancy! } : {}),
+    ...(material().backgroundMaterial ? { backgroundMaterial: material().backgroundMaterial } : {}),
+    ...(process.platform !== 'linux' ? { backgroundColor: '#00000000' } : {}),
+    ...(process.platform === 'darwin' ? { visualEffectState: 'active' as const } : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -176,7 +180,7 @@ if (!app.requestSingleInstanceLock()) {
     svc.onConfigChange((c) => {
       if (c.settings.glass !== glass) {
         glass = c.settings.glass
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setVibrancy(vibrancy())
+        if (mainWindow && !mainWindow.isDestroyed()) applyMaterial(mainWindow)
       }
       if (c.settings.launchAtLogin !== launchAtLogin) {
         launchAtLogin = c.settings.launchAtLogin

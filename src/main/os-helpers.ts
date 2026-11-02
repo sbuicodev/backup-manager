@@ -89,10 +89,15 @@ export function titleBarOptions(
   return { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay(dark) }
 }
 
-/** Native macOS window translucency behind the glass look; none when glass is off or elsewhere. */
-export function windowVibrancy(
+/**
+ * Native window material behind the glass look: macOS vibrancy, Windows 11 acrylic. Linux has
+ * none, so there the glass is drawn by the page alone.
+ */
+export function windowMaterial(
   platform: NodeJS.Platform,
-  glass: Settings['glass']
-): 'under-window' | null {
-  return platform === 'darwin' && glass !== 'off' ? 'under-window' : null
+  glass: boolean
+): { vibrancy?: 'under-window' | null; backgroundMaterial?: 'acrylic' | 'none' } {
+  if (platform === 'darwin') return { vibrancy: glass ? 'under-window' : null }
+  if (platform === 'win32') return { backgroundMaterial: glass ? 'acrylic' : 'none' }
+  return {}
 }

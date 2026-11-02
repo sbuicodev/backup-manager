@@ -36,7 +36,7 @@ describe('schema', () => {
       launchAtLogin: true,
       notifications: 'problems',
       skipScheduledOnBattery: false,
-      glass: 'frosted'
+      glass: true
     })
   })
 
@@ -369,13 +369,19 @@ describe('Files sources', () => {
   })
 })
 
-test('glass appearance defaults to frosted; old settings load with it', () => {
-  expect(defaultConfig().settings.glass).toBe('frosted')
+test('glass is on by default; old settings, and the earlier level names, still load', () => {
+  expect(defaultConfig().settings.glass).toBe(true)
+  const withGlass = (glass: unknown): unknown => ({
+    ...defaultConfig(),
+    settings: { ...defaultConfig().settings, glass }
+  })
   const old = defaultConfig() as unknown as { settings: Record<string, unknown> }
   delete old.settings.glass
-  const r = validateConfig(old)
-  expect(r.ok && r.config.settings.glass).toBe('frosted')
-  expect(
-    errorsOf({ ...defaultConfig(), settings: { ...defaultConfig().settings, glass: 'shiny' } })
-  ).not.toEqual([])
+  const glassOf = (c: unknown): unknown => {
+    const r = validateConfig(c)
+    return r.ok ? r.config.settings.glass : r.errors
+  }
+  expect(glassOf(old)).toBe(true)
+  expect(glassOf(withGlass('liquid'))).toBe(true)
+  expect(glassOf(withGlass('off'))).toBe(false)
 })

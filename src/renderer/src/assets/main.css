@@ -120,71 +120,25 @@
 }
 
 /*
- * macOS glass appearance (Settings → Glass appearance). The window has native translucency
- * (vibrancy); `html.glass` makes the page see-through over it and each `glass-<level>` class
- * only sets the variables below, lightest to strongest.
+ * Glass appearance (Settings → Glass appearance), frosted. `html.glass` turns cards, dialogs,
+ * menus and the window chrome into blurred translucent panels on every OS. `html.glass-native`
+ * (macOS vibrancy, Windows acrylic) also makes the page see-through so the native material shows.
  */
 html.glass {
-  --glass-chrome: 55%; /* sidebar and top bar opacity */
-  --glass-page: 80%; /* main area opacity */
-  --glass-card: 70%; /* cards, dialogs, menus */
-  --glass-filter: blur(8px) saturate(1.3);
-  --glass-edge: oklch(1 0 0 / 8%);
-  --glass-shine: none;
-  --glass-shadow: none;
+  --glass-chrome: 45%; /* sidebar and top bar opacity */
+  --glass-page: 70%; /* main area opacity */
+  --glass-card: 55%; /* cards, dialogs, menus */
 }
-html.glass-subtle {
-  --glass-chrome: 82%;
-  --glass-page: 92%;
-  --glass-card: 90%;
-  --glass-filter: blur(4px);
-}
-html.glass-clear {
-  --glass-chrome: 60%;
-  --glass-page: 78%;
-  --glass-card: 65%;
-  --glass-filter: blur(8px) saturate(1.3);
-  --glass-edge: oklch(1 0 0 / 14%);
-}
-html.glass-frosted {
-  --glass-chrome: 45%;
-  --glass-page: 70%;
-  --glass-card: 55%;
-  --glass-filter: blur(16px) saturate(1.5);
-}
-html.glass-liquid,
-html.glass-refract {
-  --glass-chrome: 38%;
-  --glass-page: 62%;
-  --glass-card: 45%;
-  --glass-filter: blur(20px) saturate(1.7);
-  --glass-edge: oklch(1 0 0 / 18%);
-  --glass-shine: linear-gradient(
-    120deg,
-    oklch(1 0 0 / 14%) 0%,
-    oklch(1 0 0 / 0%) 35%,
-    oklch(1 0 0 / 0%) 65%,
-    oklch(1 0 0 / 8%) 100%
-  );
-  --glass-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 22%), inset 0 -1px 0 oklch(0 0 0 / 12%),
-    0 10px 30px oklch(0 0 0 / 22%);
-}
-/* Refract bends what is behind the glass with the SVG filter rendered in App.tsx. */
-html.glass-refract {
-  --glass-filter: url(#glass-refract) blur(6px) saturate(1.7);
-}
-
-html.glass,
-html.glass body,
-html.glass #root {
+html.glass-native,
+html.glass-native body,
+html.glass-native #root {
   background: transparent;
 }
-html.glass aside,
-html.glass header.app-drag {
+html.glass-native aside,
+html.glass-native header.app-drag {
   background: color-mix(in oklch, var(--sidebar) var(--glass-chrome), transparent);
 }
-html.glass main {
+html.glass-native main {
   background: color-mix(in oklch, var(--background) var(--glass-page), transparent);
 }
 html.glass [data-slot='card'],
@@ -195,24 +149,6 @@ html.glass [data-slot='popover-content'],
 html.glass [data-slot='dropdown-menu-content'],
 html.glass [data-slot='select-content'] {
   background-color: color-mix(in oklch, var(--card) var(--glass-card), transparent);
-  background-image: var(--glass-shine);
-  background-size: 200% 200%;
-  border-color: var(--glass-edge);
-  box-shadow: var(--glass-shadow);
-  backdrop-filter: var(--glass-filter);
-}
-/* Liquid's sheen drifts slowly; never when the system asks for reduced motion. */
-@media (prefers-reduced-motion: no-preference) {
-  html.glass-liquid [data-slot='card'],
-  html.glass-refract [data-slot='card'] {
-    animation: glass-drift 18s ease-in-out infinite alternate;
-  }
-}
-@keyframes glass-drift {
-  from {
-    background-position: 0% 0%;
-  }
-  to {
-    background-position: 100% 100%;
-  }
+  border-color: oklch(1 0 0 / 8%);
+  backdrop-filter: blur(16px) saturate(1.5);
 }

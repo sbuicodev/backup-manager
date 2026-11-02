@@ -9,7 +9,7 @@ import {
   titleBarOverlay,
   trayActions,
   trayStatusLine,
-  windowVibrancy
+  windowMaterial
 } from '../../src/main/os-helpers'
 
 const now = new Date(2026, 9, 26, 10, 0) // Monday
@@ -153,14 +153,15 @@ describe('titleBarOptions', () => {
   })
 })
 
-describe('windowVibrancy', () => {
-  test('macOS with glass on: native under-window translucency; off: none', () => {
-    expect(windowVibrancy('darwin', 'frosted')).toBe('under-window')
-    expect(windowVibrancy('darwin', 'refract')).toBe('under-window')
-    expect(windowVibrancy('darwin', 'off')).toBeNull()
+describe('windowMaterial', () => {
+  test('glass on: macOS vibrancy, Windows acrylic, nothing native on Linux', () => {
+    expect(windowMaterial('darwin', true)).toEqual({ vibrancy: 'under-window' })
+    expect(windowMaterial('win32', true)).toEqual({ backgroundMaterial: 'acrylic' })
+    expect(windowMaterial('linux', true)).toEqual({})
   })
-  test('other platforms never get it', () => {
-    expect(windowVibrancy('win32', 'frosted')).toBeNull()
-    expect(windowVibrancy('linux', 'liquid')).toBeNull()
+  test('glass off: no native material anywhere', () => {
+    expect(windowMaterial('darwin', false)).toEqual({ vibrancy: null })
+    expect(windowMaterial('win32', false)).toEqual({ backgroundMaterial: 'none' })
+    expect(windowMaterial('linux', false)).toEqual({})
   })
 })
