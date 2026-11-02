@@ -550,3 +550,14 @@ describe('not set up', () => {
     expect(h.s.status().pendingRetries).toEqual([])
   })
 })
+
+test('checkNow checks one waiting backup × drive right away', async () => {
+  const h = await harness([daily('11:00')])
+  h.outcome('s0:d0', { status: 'skipped', reason: 'destination-missing' })
+  await h.s.start()
+  await h.advance(60 * MIN) // pending retry, next check in a minute
+  h.avail.d0 = false
+  h.checks.length = 0
+  await h.s.checkNow({ sourceId: 's0', destId: 'd0' })
+  expect(h.checks).toHaveLength(1)
+})

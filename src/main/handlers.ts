@@ -1,4 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
+import { isAbsolute, normalize, relative } from 'node:path'
 import { z } from 'zod'
 import { CH } from '@shared/ipc'
 import { validateConfig, type SourceItem } from '@shared/schema'
@@ -9,6 +10,8 @@ export type Dialogs = {
   pickItems(mode: PickMode, startAt?: string): Promise<SourceItem[]>
   saveFile(defaultName: string): Promise<string | null>
   openFile(): Promise<string | null>
+  /** Shows a folder in Finder/Explorer. */
+  reveal(path: string): Promise<void>
 }
 
 export type Handler = (...args: unknown[]) => Promise<unknown>
@@ -29,6 +32,20 @@ const ChangeQuerySchema = z.object({
   limit: z.number().int().min(1).max(1000).optional()
 })
 const PauseUntil = z.union([z.literal('forever'), z.iso.datetime()])
+const AbsolutePaths = z
+  .array(
+    z
+      .string()
+      .max(4096)
+      .refine((p) => isAbsolute(p))
+  )
+  .max(1000)
+
+/** Whether `p` is `root` or lies inside it, after resolving `..` (no escaping upwards). */
+function isInside(p: string, root: string): boolean {
+  const rel = relative(normalize(root), normalize(p))
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+}
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const r = schema.safeParse(value)
@@ -62,6 +79,24 @@ export function createHandlers(services: Services, dialogs: Dialogs): Record<str
     },
     [CH.configReset]: async () => services.resetConfig(),
     [CH.pickFolder]: async (startAt) => dialogs.pickFolder(parse(StartAt, startAt)),
+    [CH.statItems]: async (paths) =>
+      Promise.all(
+        parse(AbsolutePaths, paths).map(async (path) => ({
+          path,
+          kind: (await stat(path)).isDirectory() ? ('folder' as const) : ('file' as const)
+        }))
+      ),
+    [CH.destinationInfo]: async (id) => services.destinationInfo(parse(Id, id)),
+    [CH.showInFolder]: async (p) => {
+      const path = parse(z.string().max(4096), p)
+      if (!isAbsolute(path)) return false
+      if (!services.config().destinations.some((d) => isInside(path, d.path))) return false
+      await dialogs.reveal(normalize(path))
+      return true
+    },
+    [CH.checkNow]: async (sourceId, destId) =>
+      scheduler.checkNow({ sourceId: parse(Id, sourceId), destId: parse(Id, destId) }),
+    [CH.historyLatest]: async () => services.latestResults(),
     [CH.pickItems]: async (mode, startAt) =>
       dialogs.pickItems(parse(PickModeSchema, mode), parse(StartAt, startAt)),
     [CH.availability]: async () => services.availability(),

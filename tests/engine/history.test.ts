@@ -3,7 +3,13 @@ import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import type { RunLog } from '@shared/types'
 import { changeFileName } from '../../src/main/engine/changes'
-import { getRun, listRuns, newRunId, writeRunLog } from '../../src/main/engine/history'
+import {
+  getRun,
+  latestResults,
+  listRuns,
+  newRunId,
+  writeRunLog
+} from '../../src/main/engine/history'
 import { tmpDir } from '../helpers/fs'
 
 const log = (id: string, startedAt = '2026-10-25T10:00:00.000Z'): RunLog => ({
@@ -64,4 +70,36 @@ test('history retention also deletes change files', async () => {
   const files = await readdir(dir)
   expect(files.filter((f) => f.endsWith('.changes.ndjson.gz'))).toHaveLength(200)
   expect(files).not.toContain(changeFileName('2026-01-01_000000'))
+})
+
+test('latestResults keeps the newest result of each backup × drive pair', async () => {
+  const dir = await tmpDir()
+  const job = (sourceId: string, destId: string, status: 'completed' | 'failed') => ({
+    sourceId,
+    destId,
+    status,
+    counts: { copied: 0, updated: 0, zipped: 0, trashed: 0, deleted: 0, pruned: 0, skipped: 0 },
+    bytesWritten: 7,
+    warnings: [],
+    changeCount: 2
+  })
+  await writeRunLog(dir, {
+    ...log('2026-10-25_100000'),
+    jobs: [job('s1', 'd1', 'failed'), job('s1', 'd2', 'completed')]
+  })
+  await writeRunLog(dir, {
+    ...log('2026-10-25_110000', '2026-10-25T11:00:00.000Z'),
+    endedAt: '2026-10-25T11:05:00.000Z',
+    jobs: [job('s1', 'd1', 'completed')]
+  })
+  const r = await latestResults(dir)
+  expect(r.map((x) => [x.sourceId, x.destId, x.status, x.runId]).sort()).toEqual([
+    ['s1', 'd1', 'completed', '2026-10-25_110000'],
+    ['s1', 'd2', 'completed', '2026-10-25_100000']
+  ])
+  expect(r.find((x) => x.destId === 'd1')).toMatchObject({
+    endedAt: '2026-10-25T11:05:00.000Z',
+    bytesWritten: 7,
+    changeCount: 2
+  })
 })

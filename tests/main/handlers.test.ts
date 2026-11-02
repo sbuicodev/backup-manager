@@ -13,6 +13,7 @@ import { makeTree, tmpDir } from '../helpers/fs'
 async function setup(): Promise<{
   base: string
   handlers: ReturnType<typeof createHandlers>
+  revealed: string[]
   broadcasts: [string, unknown][]
   files: { save: string | null; open: string | null }
   stop: () => Promise<void>
@@ -28,9 +29,11 @@ async function setup(): Promise<{
   })
   await services.start()
   const files = { save: null as string | null, open: null as string | null }
+  const revealed: string[] = []
   const handlers = createHandlers(services, {
     // Echo where the picker was asked to start, so tests can see it was passed through.
     pickFolder: async (startAt?: string) => startAt ?? '/picked',
+    reveal: async (path: string) => void revealed.push(path),
     pickItems: async (mode: string, startAt?: string) => [
       { path: startAt ?? '/picked/a.txt', kind: mode === 'folders' ? 'folder' : 'file' } as const
     ],
@@ -40,6 +43,7 @@ async function setup(): Promise<{
   return {
     base,
     handlers,
+    revealed,
     broadcasts,
     files,
     // Let pending state writes finish before the temp dir is removed.
@@ -203,6 +207,7 @@ test('invalid config file on disk → config:get reports errors; reset restores 
   await services.start()
   const handlers = createHandlers(services, {
     pickFolder: async () => null,
+    reveal: async () => {},
     pickItems: async () => [],
     saveFile: async () => null,
     openFile: async () => null
@@ -357,4 +362,61 @@ test("start keeps the snapshot index of a source's exclusive destination", async
   await services.start()
   expect(await readdir(services.paths.snapshotIndex)).toHaveLength(1)
   services.stop()
+})
+
+test('destinations:info reports availability and free space', async () => {
+  const { handlers, base, stop } = await setup()
+  const cfg = validConfig(base)
+  cfg.destinations.push(newDestination(join(base, 'unplugged'), 'U'))
+  await handlers[CH.configSave](cfg)
+  const here = (await handlers[CH.destinationInfo](cfg.destinations[0].id)) as {
+    available: boolean
+    freeBytes: number | null
+  }
+  expect(here.available).toBe(true)
+  expect(here.freeBytes).toBeGreaterThan(0)
+  expect(await handlers[CH.destinationInfo](cfg.destinations[1].id)).toEqual({
+    available: false,
+    freeBytes: null
+  })
+  await expect(handlers[CH.destinationInfo](7)).rejects.toThrow('invalid arguments')
+  await stop()
+})
+
+test('shell:showInFolder only reveals folders inside a configured destination', async () => {
+  const { handlers, base, revealed, stop } = await setup()
+  await handlers[CH.configSave](validConfig(base))
+  expect(await handlers[CH.showInFolder](join(base, 'dest', 'S', 'src'))).toBe(true)
+  expect(await handlers[CH.showInFolder](join(base, 'dest'))).toBe(true)
+  expect(await handlers[CH.showInFolder](join(base, 'dest', '..', 'src'))).toBe(false)
+  expect(await handlers[CH.showInFolder](join(base, 'dest-other'))).toBe(false)
+  expect(await handlers[CH.showInFolder]('relative/dest')).toBe(false)
+  expect(revealed).toEqual([join(base, 'dest', 'S', 'src'), join(base, 'dest')])
+  await stop()
+})
+
+test('dialog:statItems tells files from folders and rejects relative paths', async () => {
+  const { handlers, base, stop } = await setup()
+  expect(await handlers[CH.statItems]([join(base, 'src'), join(base, 'src', 'a.txt')])).toEqual([
+    { path: join(base, 'src'), kind: 'folder' },
+    { path: join(base, 'src', 'a.txt'), kind: 'file' }
+  ])
+  await expect(handlers[CH.statItems](['src/a.txt'])).rejects.toThrow('invalid arguments')
+  await stop()
+})
+
+test('history:latest returns the newest result per backup and drive', async () => {
+  const { handlers, base, broadcasts, stop } = await setup()
+  const cfg = validConfig(base)
+  await handlers[CH.configSave](cfg)
+  await handlers[CH.runStart]()
+  await waitForRunEnd(broadcasts, 1)
+  expect(await handlers[CH.historyLatest]()).toEqual([
+    expect.objectContaining({
+      sourceId: cfg.sources[0].id,
+      destId: cfg.destinations[0].id,
+      status: 'completed'
+    })
+  ])
+  await stop()
 })

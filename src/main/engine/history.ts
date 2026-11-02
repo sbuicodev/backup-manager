@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { RunLog, RunSummary } from '@shared/types'
+import type { PairResult, RunLog, RunSummary } from '@shared/types'
 import { SAFE_ID, changeFileName } from './changes'
 import { atomicWriteText } from './fsutil'
 import { formatTimestamp, uniqueTimestampName } from './naming'
@@ -51,4 +51,28 @@ export async function listRuns(dir: string): Promise<RunSummary[]> {
     out.push({ ...rest, jobCount: jobs.length })
   }
   return out.sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0))
+}
+
+/** The newest result of each backup × drive pair across the kept run logs. */
+export async function latestResults(dir: string): Promise<PairResult[]> {
+  const seen = new Map<string, PairResult>()
+  for (const run of await listRuns(dir)) {
+    const log = await getRun(dir, run.id)
+    for (const j of log?.jobs ?? []) {
+      const key = `${j.sourceId}:${j.destId}`
+      if (seen.has(key)) continue
+      seen.set(key, {
+        sourceId: j.sourceId,
+        destId: j.destId,
+        runId: run.id,
+        endedAt: run.endedAt,
+        status: j.status,
+        ...(j.reason ? { reason: j.reason } : {}),
+        ...(j.error ? { error: j.error } : {}),
+        ...(j.changeCount !== undefined ? { changeCount: j.changeCount } : {}),
+        bytesWritten: j.bytesWritten
+      })
+    }
+  }
+  return [...seen.values()]
 }

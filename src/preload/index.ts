@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { CH, type Api } from '@shared/ipc'
 
 function subscribe<T extends unknown[]>(channel: string, cb: (...args: T) => void): () => void {
@@ -23,9 +23,15 @@ const api: Api = {
   },
   dialog: {
     pickFolder: (startAt) => invoke(CH.pickFolder, startAt),
-    pickItems: (mode, startAt) => invoke(CH.pickItems, mode, startAt)
+    pickItems: (mode, startAt) => invoke(CH.pickItems, mode, startAt),
+    statItems: (paths) => invoke(CH.statItems, paths)
   },
-  destinations: { availability: () => invoke(CH.availability) },
+  destinations: {
+    availability: () => invoke(CH.availability),
+    info: (id) => invoke(CH.destinationInfo, id)
+  },
+  shell: { showInFolder: (path) => invoke(CH.showInFolder, path) },
+  files: { pathOf: (file) => webUtils.getPathForFile(file) },
   run: {
     plan: (ids) => invoke(CH.runPlan, ids),
     start: (ids) => invoke(CH.runStart, ids),
@@ -36,14 +42,20 @@ const api: Api = {
     status: () => invoke(CH.schedulerStatus),
     pause: (until) => invoke(CH.schedulerPause, until),
     resume: () => invoke(CH.schedulerResume),
+    checkNow: (sourceId, destId) => invoke(CH.checkNow, sourceId, destId),
     onStatus: (cb) => subscribe(CH.status, cb)
   },
   history: {
     list: () => invoke(CH.historyList),
     get: (id) => invoke(CH.historyGet, id),
-    changes: (runId, q) => invoke(CH.historyChanges, runId, q)
+    changes: (runId, q) => invoke(CH.historyChanges, runId, q),
+    latest: () => invoke(CH.historyLatest)
   },
-  app: { platform: process.platform, onNavigate: (cb) => subscribe(CH.navigate, cb) }
+  app: {
+    platform: process.platform,
+    onNavigate: (cb) => subscribe(CH.navigate, cb),
+    onSelect: (cb) => subscribe(CH.select, cb)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

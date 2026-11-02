@@ -2,6 +2,7 @@ import type { Config, SourceItem } from './schema'
 import type {
   ChangePage,
   ChangeQuery,
+  PairResult,
   Plan,
   ProgressEvent,
   RunLog,
@@ -33,8 +34,22 @@ export type Api = {
      * (macOS only; Windows and Linux pickers take files or folders, not both).
      */
     pickItems(mode: 'any' | 'files' | 'folders', startAt?: string): Promise<SourceItem[]>
+    /** File or folder kinds for dropped paths. */
+    statItems(paths: string[]): Promise<SourceItem[]>
   }
-  destinations: { availability(): Promise<Record<string, boolean>> }
+  destinations: {
+    availability(): Promise<Record<string, boolean>>
+    /** Whether the drive is there, and its free space (null when it is not). */
+    info(id: string): Promise<{ available: boolean; freeBytes: number | null }>
+  }
+  shell: {
+    /** Reveals a folder in Finder/Explorer; only paths inside a configured destination. */
+    showInFolder(path: string): Promise<boolean>
+  }
+  files: {
+    /** Absolute path of a file dropped onto the window. */
+    pathOf(file: File): string
+  }
   run: {
     plan(sourceIds?: string[]): Promise<Plan>
     start(sourceIds?: string[]): Promise<string | null>
@@ -45,17 +60,23 @@ export type Api = {
     status(): Promise<SchedulerStatus>
     pause(until: string | 'forever'): Promise<void>
     resume(): Promise<void>
+    /** Checks one waiting backup × drive now instead of at its next check time. */
+    checkNow(sourceId: string, destId: string): Promise<void>
     onStatus(cb: (s: SchedulerStatus) => void): () => void
   }
   history: {
     list(): Promise<RunSummary[]>
     get(id: string): Promise<RunLog | null>
     changes(runId: string, q: ChangeQuery): Promise<ChangePage>
+    /** The newest result of each backup × drive pair. */
+    latest(): Promise<PairResult[]>
   }
   app: {
     /** `process.platform` of the app: the top bar leaves room for the native window controls. */
     platform: string
     onNavigate(cb: (screen: Screen, arg?: string) => void): () => void
+    /** The tray asks the window to show a backup. */
+    onSelect(cb: (sel: { kind: 'backup'; id: string }) => void): () => void
   }
 }
 
@@ -68,7 +89,12 @@ export const CH = {
   configReset: 'config:reset',
   pickFolder: 'dialog:pickFolder',
   pickItems: 'dialog:pickItems',
+  statItems: 'dialog:statItems',
   availability: 'destinations:availability',
+  destinationInfo: 'destinations:info',
+  showInFolder: 'shell:showInFolder',
+  checkNow: 'scheduler:checkNow',
+  historyLatest: 'history:latest',
   runPlan: 'run:plan',
   runStart: 'run:start',
   runCancel: 'run:cancel',
@@ -81,5 +107,6 @@ export const CH = {
   progress: 'run:progress',
   status: 'scheduler:status-changed',
   configChanged: 'config:changed',
-  navigate: 'app:navigate'
+  navigate: 'app:navigate',
+  select: 'app:select'
 } as const

@@ -157,6 +157,10 @@ if (!app.requestSingleInstanceLock()) {
 
     registerIpc(
       createHandlers(svc, {
+        reveal: async (path) => {
+          // openPath shows the folder itself; showItemInFolder would show its parent.
+          await shell.openPath(path)
+        },
         pickItems: async (mode, startAt) => {
           const kinds: Array<'openFile' | 'openDirectory'> =
             mode === 'files'

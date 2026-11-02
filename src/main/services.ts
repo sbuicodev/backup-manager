@@ -1,12 +1,12 @@
-import { readdir } from 'node:fs/promises'
+import { readdir, statfs } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CH, type ConfigState, type SaveResult } from '@shared/ipc'
 import { defaultConfig, type Config } from '@shared/schema'
-import type { ChangePage, ChangeQuery, Plan, RunLog, RunSummary } from '@shared/types'
+import type { ChangePage, ChangeQuery, PairResult, Plan, RunLog, RunSummary } from '@shared/types'
 import { loadConfig, saveConfig } from './engine/config'
 import { FsDestination } from './engine/destination'
 import { runBackup } from './engine/executor'
-import { getRun, listRuns, newRunId } from './engine/history'
+import { getRun, latestResults, listRuns, newRunId } from './engine/history'
 import { readChanges } from './engine/changes'
 import { planRun, targets } from './engine/planner'
 import { pruneSnapshotIndexes } from './engine/snapshot-index'
@@ -38,6 +38,8 @@ export type Services = {
   listRuns(): Promise<RunSummary[]>
   getRun(id: string): Promise<RunLog | null>
   readChanges(runId: string, q: ChangeQuery): Promise<ChangePage>
+  latestResults(): Promise<PairResult[]>
+  destinationInfo(id: string): Promise<{ available: boolean; freeBytes: number | null }>
   scheduler: Scheduler
   start(): Promise<void>
   stop(): void
@@ -142,6 +144,19 @@ export async function createServices(opts: ServicesOptions): Promise<Services> {
     listRuns: () => listRuns(paths.history),
     getRun: (id) => getRun(paths.history, id),
     readChanges: (runId, q) => readChanges(paths.history, runId, q),
+    latestResults: () => latestResults(paths.history),
+    destinationInfo: async (id) => {
+      const d = current().destinations.find((x) => x.id === id)
+      if (!d || !(await new FsDestination(d.path).isAvailable())) {
+        return { available: false, freeBytes: null }
+      }
+      try {
+        const s = await statfs(d.path)
+        return { available: true, freeBytes: s.bavail * s.bsize }
+      } catch {
+        return { available: true, freeBytes: null }
+      }
+    },
     scheduler,
     start: async () => {
       // An unreadable config is not "no sources": keep every index until it is fixed.

@@ -90,6 +90,16 @@ export class Scheduler {
     return this.tick()
   }
 
+  /** "Check now" on one waiting backup × drive: its retry is due again at once. */
+  checkNow(req: JobRequest): Promise<void> {
+    const js = this.state.jobs[jobKey(req)]
+    if (js?.pendingRetry) {
+      js.retryAttempts = 0
+      js.nextRetryAt = null
+    }
+    return this.tick()
+  }
+
   /** Wake or AC power: drives often come back now, so every pending retry is due again. */
   private resetRetryTiming(): void {
     for (const js of Object.values(this.state.jobs)) {
