@@ -32,7 +32,7 @@ class FailingDest extends FsDestination {
 }
 
 async function ctxFor(source: Source, dest: FsDestination): Promise<JobContext> {
-  const { files, skipped } = await walkTree(source.path, {
+  const { files, skipped } = await walkTree(source.items[0].path, {
     excludes: [...source.excludes, ...(source.useGlobalExcludes ? ['.DS_Store'] : [])]
   })
   return {

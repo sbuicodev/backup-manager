@@ -15,7 +15,8 @@ import {
   basePlan,
   isAtOrUnder,
   looksUnmounted,
-  mirrorReadRoot,
+  destExcluded,
+  mirrorLayout,
   mirrorSkipTop,
   removalCounts,
   removeByPolicy,
@@ -57,12 +58,19 @@ export function diffMirror(
 
 export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
   const { slug } = ctx.source
-  const { read, legacy } = await mirrorReadRoot(ctx)
-  const dst = await ctx.dest.walk(
-    read,
-    effectiveExcludes(ctx.source, ctx.globalExcludes),
-    mirrorSkipTop(ctx)
+  const layout = await mirrorLayout(ctx)
+  const excluded = destExcluded(ctx, effectiveExcludes(ctx.source, ctx.globalExcludes))
+  const dst = (
+    await Promise.all(
+      layout.reads.map(async ({ root, prefix }) =>
+        (await ctx.dest.walk(root, [], root === slug ? mirrorSkipTop(ctx) : undefined)).map(
+          (f) => ({ ...f, rel: `${prefix}${f.rel}` })
+        )
+      )
+    )
   )
+    .flat()
+    .filter((f) => !excluded(f.rel))
   const reserved = reservedSourceFiles(ctx.srcFiles)
   const srcFiles = ctx.srcFiles.filter((f) => !reserved.has(f.rel))
   const emptySource = looksUnmounted(ctx, dst.length > 0)
@@ -83,7 +91,7 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
       const run = new JobRun(ctx, x, plan.bytes)
       if (emptySource) warnEmptySource(run)
       warnReserved(run, ctx.srcFiles)
-      await settleLayout(ctx, legacy)
+      await settleLayout(ctx, layout)
       await ctx.dest.removePartials(slug, true)
       // Removals first: on case-insensitive filesystems a case-only rename must not
       // have its freshly copied file trashed afterwards.

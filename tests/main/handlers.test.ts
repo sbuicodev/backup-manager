@@ -29,8 +29,11 @@ async function setup(): Promise<{
   await services.start()
   const files = { save: null as string | null, open: null as string | null }
   const handlers = createHandlers(services, {
-    pickFolder: async () => '/picked',
-    pickFiles: async () => ['/picked/a.txt'],
+    // Echo where the picker was asked to start, so tests can see it was passed through.
+    pickFolder: async (startAt?: string) => startAt ?? '/picked',
+    pickItems: async (mode: string, startAt?: string) => [
+      { path: startAt ?? '/picked/a.txt', kind: mode === 'folders' ? 'folder' : 'file' } as const
+    ],
     saveFile: async () => files.save,
     openFile: async () => files.open
   })
@@ -176,6 +179,18 @@ test('destinations:availability and dialog:pickFolder', async () => {
   await stop()
 })
 
+test('the pickers start at the path already set, and reject anything that is not a path', async () => {
+  const { handlers, stop } = await setup()
+  expect(await handlers[CH.pickFolder]('/Users/me/Music')).toBe('/Users/me/Music')
+  expect(await handlers[CH.pickItems]('any', '/Users/me/tax.pdf')).toEqual([
+    { path: '/Users/me/tax.pdf', kind: 'file' }
+  ])
+  await expect(handlers[CH.pickItems]('everything')).rejects.toThrow('invalid arguments')
+  await expect(handlers[CH.pickFolder](42)).rejects.toThrow('invalid arguments')
+  await expect(handlers[CH.pickItems]('files', {})).rejects.toThrow('invalid arguments')
+  await stop()
+})
+
 test('invalid config file on disk → config:get reports errors; reset restores defaults', async () => {
   const base = await tmpDir()
   await makeTree(base, { 'user/config.json': '{broken' })
@@ -188,7 +203,7 @@ test('invalid config file on disk → config:get reports errors; reset restores 
   await services.start()
   const handlers = createHandlers(services, {
     pickFolder: async () => null,
-    pickFiles: async () => [],
+    pickItems: async () => [],
     saveFile: async () => null,
     openFile: async () => null
   })
@@ -220,7 +235,7 @@ test("history:changes returns the run's file changes, filtered and paged", async
     destId: cfg.destinations[0].id
   })) as ChangePage
   expect(page.total).toBe(1)
-  expect(page.items[0]).toMatchObject({ action: 'added', path: 'a.txt', size: 1 })
+  expect(page.items[0]).toMatchObject({ action: 'added', path: 'src/a.txt', size: 1 })
   const none = (await handlers[CH.historyChanges](id, {
     sourceId: cfg.sources[0].id,
     destId: cfg.destinations[0].id,
@@ -305,7 +320,7 @@ test('snapshot runs through services record a diff against the previous snapshot
     sourceId: cfg.sources[0].id,
     destId: cfg.destinations[0].id
   })) as ChangePage
-  expect(page.items.map((i) => [i.action, i.path])).toEqual([['added', 'b.txt']])
+  expect(page.items.map((i) => [i.action, i.path])).toEqual([['added', 'src/b.txt']])
   await stop()
 })
 

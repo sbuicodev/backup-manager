@@ -205,16 +205,23 @@ destinations.
 
 ## 5. Destination layout
 
-For source slug `S` at destination root `D`:
+A source is a list of items (files and folders); each is stored under its own name. For source
+slug `S` at destination root `D`, with a folder item `F` and a file item `f`:
 
-| mode     | packaging      | output                                              |
-|----------|----------------|-----------------------------------------------------|
-| mirror   | copy           | `D/S/<files…>`                                      |
-| mirror   | zip-whole      | `D/S/S.zip`                                         |
-| mirror   | zip-children   | `D/S/<child>.zip` (+ `_files.zip` if bundling)      |
-| snapshot | copy           | `D/S/<YYYY-MM-DD_HHmmss>/<files…>`                  |
-| snapshot | zip-whole      | `D/S/<YYYY-MM-DD_HHmmss>.zip`                       |
-| snapshot | zip-children   | `D/S/<YYYY-MM-DD_HHmmss>/<child>.zip …`             |
+| mode     | packaging      | output                                                        |
+|----------|----------------|---------------------------------------------------------------|
+| mirror   | copy           | `D/S/F/<files…>`, `D/S/f`                                     |
+| mirror   | zip-whole      | `D/S/S.zip` (entries `F/…`, `f`)                              |
+| mirror   | zip-children   | `D/S/F/<child>.zip` (+ `F/_files.zip` if bundling), `D/S/f.zip` |
+| snapshot | copy           | `D/S/<YYYY-MM-DD_HHmmss>/F/<files…>`, `…/f`                   |
+| snapshot | zip-whole      | `D/S/<YYYY-MM-DD_HHmmss>.zip`                                 |
+| snapshot | zip-children   | `D/S/<YYYY-MM-DD_HHmmss>/F/<child>.zip …`, `…/f.zip`          |
+
+- Items with the same name (ignoring case), an item inside another listed folder, an item inside
+  a destination, and a destination inside a folder item are rejected. Exclusions apply inside
+  each folder, relative to it. A missing item is skipped with a warning and its backup protected;
+  with every item missing the source is "missing". Configs from before item lists convert on load
+  (a one-folder source keeps `legacyFlatName`, see below).
 
 - Mirror trash: `D/S/.trash/<YYYY-MM-DD_HHmmss>/<relative path>`.
 - The mirror lives directly in `D/S/` (earlier versions used `D/S/current/`). Its own hidden
@@ -222,13 +229,21 @@ For source slug `S` at destination root `D`:
   layout is current) — are never compared, trashed or deleted; a source item with one of those
   names at its top level is skipped with a warning. Top-level names that look like snapshots
   (left by an earlier snapshot mode) are never removed by the mirror unless the source has them.
-- A backup still in `D/S/current/` is planned from there and moved up into `D/S/` (renames only)
-  at the start of its next mirror run; a name that already exists in `D/S/` stops the job with an
-  error, leaving the rest in `current/` for the next run. The marker is written afterwards, so a
-  source with its own top-level `current` folder is never moved twice.
+- Older mirror layouts are moved into place at the start of the next mirror run, with renames
+  only, and planning reads them where they are until then (a preview never moves anything). The
+  marker records the layout version:
+  - layout 1, everything in `D/S/current/`: renamed to `D/S/<legacyFlatName>/` (or moved up into
+    `D/S/` for a source with no folder name to move into);
+  - layout 2, a one-folder source's contents directly in `D/S/`: moved down into
+    `D/S/<legacyFlatName>/` through a staging folder (`.backup-manager-nesting`), so a folder
+    containing an entry with its own name works and a crash resumes on the next run;
+  - layout 3: by item (this version).
+  A name that is already taken stops the job with an error; the next run continues. Zip mirrors
+  are rebuilt once after a move (the archives' entry names gain the item's name).
 - Timestamps use local time; if a name already exists, append `-2`, `-3`, ….
-- `zip-children`: each top-level directory → `<dir>.zip`. Each loose top-level file →
-  `<file>.zip` (`individual`) or all of them in `_files.zip` (`bundle`).
+- `zip-children`: inside each folder item, each directory → `<F>/<dir>.zip` and each loose file →
+  `<F>/<file>.zip` (`individual`) or all of them in `<F>/_files.zip` (`bundle`); each file item →
+  `<f>.zip`.
 - Mirror + zip keeps a sidecar manifest `D/S/.backup-manager.json` recording a
   fingerprint (hash of sorted `path|size|mtime` entries) for each produced archive. An
   archive is regenerated only when its fingerprint changes, so unchanged children are not

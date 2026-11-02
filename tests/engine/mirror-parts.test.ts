@@ -38,7 +38,7 @@ async function put(dir: string, rel: string, size: number): Promise<void> {
 }
 
 async function run(w: World, changes: ChangeEntry[] = []): Promise<JobResult> {
-  const { files, skipped } = await walkTree(w.source.path, { excludes: [] })
+  const { files, skipped } = await walkTree(w.source.items[0].path, { excludes: [] })
   const ctx: JobContext = {
     source: w.source,
     destId: 'd1',

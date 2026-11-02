@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   app,
@@ -156,14 +157,29 @@ if (!app.requestSingleInstanceLock()) {
 
     registerIpc(
       createHandlers(svc, {
-        pickFiles: async () => {
+        pickItems: async (mode, startAt) => {
+          const kinds: Array<'openFile' | 'openDirectory'> =
+            mode === 'files'
+              ? ['openFile']
+              : mode === 'folders'
+                ? ['openDirectory']
+                : ['openFile', 'openDirectory']
           const r = await dialog.showOpenDialog(dialogParent(), {
-            properties: ['openFile', 'multiSelections']
+            ...(startAt ? { defaultPath: startAt } : {}),
+            properties: [...kinds, 'multiSelections']
           })
-          return r.canceled ? [] : r.filePaths
+          if (r.canceled) return []
+          // The picker does not say which picks are folders; ask the file system.
+          return Promise.all(
+            r.filePaths.map(async (path) => ({
+              path,
+              kind: (await stat(path)).isDirectory() ? ('folder' as const) : ('file' as const)
+            }))
+          )
         },
-        pickFolder: async () => {
+        pickFolder: async (startAt) => {
           const r = await dialog.showOpenDialog(dialogParent(), {
+            ...(startAt ? { defaultPath: startAt } : {}),
             properties: ['openDirectory', 'createDirectory']
           })
           return r.canceled ? null : (r.filePaths[0] ?? null)

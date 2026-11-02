@@ -15,7 +15,7 @@ Use a throwaway profile by launching with `BM_USER_DATA=/tmp/bm-smoke` when poss
 ## Backups
 
 - [ ] Each packaging × mode produces the layout from spec §5:
-      mirror copy `S/…`; mirror zip `S/*.zip` + `.backup-manager.json`;
+      mirror copy `S/<item>/…`; mirror zip `S/<folder>/*.zip`, `S/<file>.zip` + `.backup-manager.json`;
       snapshot copy `S/<timestamp>/…`; snapshot zip-whole `S/<timestamp>.zip`; snapshot zip-children `S/<timestamp>/*.zip`.
 - [ ] Second mirror run with no changes writes nothing (History shows "No changes").
 - [ ] Deleting a source file moves it to `S/.trash/<timestamp>/` (trash policy).

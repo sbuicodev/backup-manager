@@ -54,7 +54,7 @@ describe('schema', () => {
     const s = newSource('/p', 'Docs', [])
     expect(s).toMatchObject({
       name: 'Docs',
-      path: '/p',
+      items: [{ path: '/p', kind: 'folder' }],
       enabled: true,
       mode: 'mirror',
       packaging: 'copy',
@@ -204,7 +204,7 @@ describe('slug and path safety', () => {
         c.destinations.push(newDestination(`${p}-dest`, 'D'))
       })
       const errs = errorsOf(cfg).join('\n')
-      expect(errs).toMatch(/sources\.0\.path/)
+      expect(errs).toMatch(/sources\.0\.items\.0\.path/)
       expect(errs).toMatch(/destinations\.0\.path/)
     }
   )
@@ -345,43 +345,85 @@ describe('source-exclusive destinations', () => {
   })
 })
 
-describe('Files sources', () => {
-  const filesSource = (files: string[]): Source => ({
-    ...newSource('', 'Important', []),
-    kind: 'files',
-    files
+describe('source items', () => {
+  const withItems = (items: Source['items']): Source => ({ ...newSource('', 'Mixed', []), items })
+  const oldSource = (fields: Record<string, unknown>): unknown => {
+    const { items: _i, legacyFlatName: _l, ...rest } = newSource('/x', 'Old', [])
+    return { ...defaultConfig(), sources: [{ ...rest, ...fields }] }
+  }
+  const loaded = (cfg: unknown): Source => {
+    const r = validateConfig(cfg)
+    if (!r.ok) throw new Error(r.errors.join('\n'))
+    return r.config.sources[0]
+  }
+
+  test('an old one-folder source becomes one folder item and remembers its flat layout', () => {
+    expect(loaded(oldSource({ kind: 'folder', path: '/Users/me/Documents' }))).toMatchObject({
+      items: [{ path: '/Users/me/Documents', kind: 'folder' }],
+      legacyFlatName: 'Documents'
+    })
+    // configs from before "kind" existed were folders too
+    expect(loaded(oldSource({ path: '/Users/me/Music' })).items).toEqual([
+      { path: '/Users/me/Music', kind: 'folder' }
+    ])
   })
 
-  test('sources are folders by default; an old source loads as a folder', () => {
-    expect(newSource('/a', 'A', [])).toMatchObject({ kind: 'folder', files: [] })
-    const old = defaultConfig() as unknown as { sources: Record<string, unknown>[] }
-    const { kind: _k, files: _f, ...legacy } = newSource('/a', 'A', [])
-    old.sources.push(legacy)
-    const r = validateConfig(old)
-    expect(r.ok && r.config.sources[0]).toMatchObject({ kind: 'folder', files: [] })
+  test('an old Files source becomes file items with nothing to move', () => {
+    expect(
+      loaded(oldSource({ kind: 'files', path: '', files: ['/a/tax.pdf', '/b/vault.kdbx'] }))
+    ).toMatchObject({
+      items: [
+        { path: '/a/tax.pdf', kind: 'file' },
+        { path: '/b/vault.kdbx', kind: 'file' }
+      ],
+      legacyFlatName: null
+    })
   })
 
-  test('a Files source needs at least one absolute file and no folder path', () => {
-    expect(errorsOf(cfgWith((c) => c.sources.push(filesSource(['/x/tax.pdf']))))).toEqual([])
-    expect(errorsOf(cfgWith((c) => c.sources.push(filesSource([]))))).not.toEqual([])
-    expect(errorsOf(cfgWith((c) => c.sources.push(filesSource(['tax.pdf']))))).not.toEqual([])
+  test('files and folders mix; at least one item is needed', () => {
+    const mixed = withItems([
+      { path: '/Users/me/Documents', kind: 'folder' },
+      { path: '/Users/me/Desktop/tax.pdf', kind: 'file' }
+    ])
+    expect(errorsOf(cfgWith((c) => c.sources.push(mixed)))).toEqual([])
+    expect(errorsOf(cfgWith((c) => c.sources.push(withItems([]))))).not.toEqual([])
   })
 
-  test('two files with the same name (ignoring case) are rejected', () => {
-    const cfg = cfgWith((c) => c.sources.push(filesSource(['/a/config', '/b/CONFIG'])))
+  test('two items with the same name (ignoring case) are rejected', () => {
+    const cfg = cfgWith((c) =>
+      c.sources.push(
+        withItems([
+          { path: '/a/config', kind: 'file' },
+          { path: '/b/CONFIG', kind: 'folder' }
+        ])
+      )
+    )
     expect(errorsOf(cfg).join('\n')).toMatch(/same name.*config/i)
   })
 
-  test('a file inside a destination is rejected', () => {
-    const cfg = cfgWith((c) => {
-      c.destinations.push(newDestination('/backup', 'B'))
-      c.sources.push(filesSource(['/backup/x.txt']))
-    })
-    expect(errorsOf(cfg).join('\n')).toMatch(/inside destination/)
+  test('an item inside another listed folder is rejected', () => {
+    const cfg = cfgWith((c) =>
+      c.sources.push(
+        withItems([
+          { path: '/Users/me/Documents', kind: 'folder' },
+          { path: '/Users/me/Documents/tax.pdf', kind: 'file' }
+        ])
+      )
+    )
+    expect(errorsOf(cfg).join('\n')).toMatch(/already inside/)
   })
 
-  test('a folder source still needs an absolute path', () => {
-    expect(errorsOf(cfgWith((c) => c.sources.push(newSource('rel', 'A', []))))).not.toEqual([])
+  test('an item inside a destination, or a destination inside a folder item, is rejected', () => {
+    const inside = cfgWith((c) => {
+      c.destinations.push(newDestination('/backup', 'B'))
+      c.sources.push(withItems([{ path: '/backup/x.txt', kind: 'file' }]))
+    })
+    expect(errorsOf(inside).join('\n')).toMatch(/inside destination/)
+    const around = cfgWith((c) => {
+      c.destinations.push(newDestination('/data/backup', 'B'))
+      c.sources.push(withItems([{ path: '/data', kind: 'folder' }]))
+    })
+    expect(errorsOf(around).join('\n')).toMatch(/destination "B" is inside/)
   })
 })
 

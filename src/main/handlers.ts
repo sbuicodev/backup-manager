@@ -1,12 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { CH } from '@shared/ipc'
-import { validateConfig } from '@shared/schema'
+import { validateConfig, type SourceItem } from '@shared/schema'
 import type { Services } from './services'
 
 export type Dialogs = {
-  pickFolder(): Promise<string | null>
-  pickFiles(): Promise<string[]>
+  pickFolder(startAt?: string): Promise<string | null>
+  pickItems(mode: PickMode, startAt?: string): Promise<SourceItem[]>
   saveFile(defaultName: string): Promise<string | null>
   openFile(): Promise<string | null>
 }
@@ -15,6 +15,9 @@ export type Handler = (...args: unknown[]) => Promise<unknown>
 
 const SourceIds = z.array(z.string()).optional()
 const Id = z.string()
+const StartAt = z.string().max(4096).optional()
+const PickModeSchema = z.enum(['any', 'files', 'folders'])
+type PickMode = z.infer<typeof PickModeSchema>
 const ChangeQuerySchema = z.object({
   sourceId: z.string(),
   destId: z.string(),
@@ -58,8 +61,9 @@ export function createHandlers(services: Services, dialogs: Dialogs): Record<str
       return r.ok ? services.saveConfig(r.config) : r
     },
     [CH.configReset]: async () => services.resetConfig(),
-    [CH.pickFolder]: async () => dialogs.pickFolder(),
-    [CH.pickFiles]: async () => dialogs.pickFiles(),
+    [CH.pickFolder]: async (startAt) => dialogs.pickFolder(parse(StartAt, startAt)),
+    [CH.pickItems]: async (mode, startAt) =>
+      dialogs.pickItems(parse(PickModeSchema, mode), parse(StartAt, startAt)),
     [CH.availability]: async () => services.availability(),
     [CH.runPlan]: async (ids) => services.plan(parse(SourceIds, ids)),
     [CH.runStart]: async (ids) => scheduler.runNow(parse(SourceIds, ids))?.id ?? null,

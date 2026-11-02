@@ -36,7 +36,7 @@ export function DestinationDialog({
   const [zipLimit, setZipLimit] = useState(initial?.zipPartLimitBytes ?? null)
   const [forceChunk, setForceChunk] = useState(initial?.forceChunkOversized ?? false)
   const browse = async (): Promise<void> => {
-    const p = await api.dialog.pickFolder()
+    const p = await api.dialog.pickFolder(path.trim() || undefined)
     if (p) {
       setPath(p)
       if (!name) setName(p.split(/[\\/]/).filter(Boolean).pop() ?? '')

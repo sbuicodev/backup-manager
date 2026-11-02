@@ -1,4 +1,4 @@
-import type { Config } from './schema'
+import type { Config, SourceItem } from './schema'
 import type {
   ChangePage,
   ChangeQuery,
@@ -25,7 +25,15 @@ export type Api = {
     reset(): Promise<void>
     onChange(cb: (state: ConfigState) => void): () => void
   }
-  dialog: { pickFolder(): Promise<string | null>; pickFiles(): Promise<string[]> }
+  /** `startAt`: open where the field already points (the folder, or the last file picked). */
+  dialog: {
+    pickFolder(startAt?: string): Promise<string | null>
+    /**
+     * Files and/or folders for a source, each with its kind. 'any' mixes both in one picker
+     * (macOS only; Windows and Linux pickers take files or folders, not both).
+     */
+    pickItems(mode: 'any' | 'files' | 'folders', startAt?: string): Promise<SourceItem[]>
+  }
   destinations: { availability(): Promise<Record<string, boolean>> }
   run: {
     plan(sourceIds?: string[]): Promise<Plan>
@@ -59,7 +67,7 @@ export const CH = {
   configImport: 'config:import',
   configReset: 'config:reset',
   pickFolder: 'dialog:pickFolder',
-  pickFiles: 'dialog:pickFiles',
+  pickItems: 'dialog:pickItems',
   availability: 'destinations:availability',
   runPlan: 'run:plan',
   runStart: 'run:start',

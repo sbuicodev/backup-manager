@@ -25,7 +25,7 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
   // zip-whole parts are named after the snapshot timestamp, so their base is filled in later.
   const archives: ArchivePlan[] = isCopy
     ? []
-    : computeZipTargets(source, ctx.srcFiles).map((t) => ({
+    : computeZipTargets(source, ctx.srcFiles, ctx.itemized).map((t) => ({
         base: t.base,
         parts: packFresh(t.files, ctx.zip)
       }))
@@ -75,6 +75,8 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
       /** Writes one part into `dir` as `<base>.zip`, `<base>.partN.zip` or its chunks. */
       const writePart = async (dir: string, base: string, part: PartPlan): Promise<string[]> => {
         const file = partBaseName(base, part)
+        // Archives of a folder item live in a subfolder named after it.
+        if (file.includes('/')) await dest.mkdirp(`${dir}/${file.slice(0, file.lastIndexOf('/'))}`)
         const failed = new Set<string>()
         const entries = part.files.map((f) => ({
           absPath: absOf(f.rel),

@@ -4,12 +4,12 @@ import {
   type Destination as DestinationConfig,
   type Source
 } from '@shared/schema'
-import type { FileEntry, JobKind, JobPlan, JobRequest, Plan, SkippedEntry } from '@shared/types'
+import type { JobKind, JobPlan, JobRequest, Plan } from '@shared/types'
 import { FsDestination, type Destination } from './destination'
 import { effectiveExcludes, type JobContext, type PreparedJob } from './job'
 import { prepareMirrorCopy, prepareMirrorZip } from './mirror'
 import { prepareSnapshot } from './snapshot'
-import { statFiles, walkTree } from './walk'
+import { readSourceItems, type SourceFiles } from './source-items'
 
 export type RunRequest = { sourceIds?: string[] } | { jobs: JobRequest[] }
 
@@ -83,19 +83,11 @@ export async function planRun(
 ): Promise<{ plan: Plan; prepared: PreparedEntry[] }> {
   const now = (deps.now ?? (() => new Date()))()
   const makeDestination = deps.makeDestination ?? ((root: string) => new FsDestination(root))
-  type Walked = { files: FileEntry[]; skipped: SkippedEntry[]; abs?: Map<string, string> }
-  const walks = new Map<string, Promise<Walked | null>>()
-  const walkSource = (s: Source): Promise<Walked | null> => {
+  const walks = new Map<string, Promise<SourceFiles | null>>()
+  const walkSource = (s: Source): Promise<SourceFiles | null> => {
     let w = walks.get(s.id)
     if (!w) {
-      w =
-        s.kind === 'files'
-          ? // A Files source with none of its files left is "missing", like a missing folder.
-            statFiles(s.files).then((r) => (r.files.length > 0 ? r : null))
-          : walkTree(s.path, {
-              excludes: effectiveExcludes(s, config.globalExcludes),
-              signal: deps.signal
-            }).catch(() => null)
+      w = readSourceItems(s, effectiveExcludes(s, config.globalExcludes), deps.signal)
       walks.set(s.id, w)
     }
     return w
@@ -124,7 +116,8 @@ export async function planRun(
       now,
       zip: effectiveZipSettings(source, d),
       indexDir: deps.indexDir,
-      ...(walked.abs ? { absOf: (rel: string) => walked.abs!.get(rel)! } : {})
+      absOf: walked.absOf,
+      itemized: true
     }
     try {
       const job =

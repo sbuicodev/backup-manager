@@ -61,7 +61,7 @@ test('disabled source and destination are excluded', async () => {
 
 test('missing source → skipped source-missing for each of its jobs', async () => {
   const { cfg, ids } = await world()
-  cfg.sources[0].path = join(cfg.sources[0].path, 'gone')
+  cfg.sources[0].items = [{ path: join(cfg.sources[0].items[0].path, 'gone'), kind: 'folder' }]
   const { plan, prepared } = await planRun(cfg, {})
   expect(plan.jobs.slice(0, 2).map((j) => [j.status, j.reason])).toEqual([
     ['skipped', 'source-missing'],

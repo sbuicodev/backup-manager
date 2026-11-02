@@ -5,7 +5,7 @@ import type { ExecContext, JobContext } from '../../src/main/engine/job'
 import { walkTree } from '../../src/main/engine/walk'
 
 export async function ctxFor(source: Source, dest: FsDestination, now: Date): Promise<JobContext> {
-  const { files, skipped } = await walkTree(source.path, { excludes: source.excludes })
+  const { files, skipped } = await walkTree(source.items[0].path, { excludes: source.excludes })
   return {
     source,
     destId: 'd1',

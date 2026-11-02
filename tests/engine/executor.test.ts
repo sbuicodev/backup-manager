@@ -79,7 +79,7 @@ test('destination removed mid-job → failed destination-lost, next job runs, no
   expect(log.jobs[0]).toMatchObject({ status: 'failed', reason: 'destination-lost' })
   expect(log.jobs[1].status).toBe('completed')
   expect(log.status).toBe('failed')
-  expect(await readTree(join(base, 'd2'))).toEqual({ 'S2/x.txt': 'x' })
+  expect(await readTree(join(base, 'd2'))).toEqual({ 'S2/s2/x.txt': 'x' })
 })
 
 test('cancel during job 1 → job 1 cancelled, job 2 cancelled without running, run cancelled', async () => {
@@ -150,9 +150,9 @@ test('a run records changes and sets changeCount per job', async () => {
     destId: cfg.destinations[0].id
   })
   expect(page.items.map((i) => [i.action, i.path])).toEqual([
-    ['added', 'f0.txt'],
-    ['added', 'f1.txt'],
-    ['added', 'f2.txt']
+    ['added', 's1/f0.txt'],
+    ['added', 's1/f1.txt'],
+    ['added', 's1/f2.txt']
   ])
 })
 

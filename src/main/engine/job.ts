@@ -26,13 +26,18 @@ export type JobContext = {
   zip: EffectiveZip
   /** Folder of snapshot file-list indexes; when unset, snapshots record no change diff. */
   indexDir?: string
-  /** Absolute path of a source file; when unset, `rel` is under the source folder. */
+  /** Absolute path of a source file; when unset, `rel` is under the source's first folder. */
   absOf?: (rel: string) => string
+  /**
+   * True when files are named by item (`<item>/…`, set by the planner). Code that builds jobs
+   * directly from one folder's contents leaves it unset, and archives follow that folder's layout.
+   */
+  itemized?: boolean
 }
 
-/** Where a source file named `rel` lives on disk (folder sources and Files sources alike). */
+/** Where a source file named `rel` lives on disk. */
 export function sourceAbs(ctx: JobContext, rel: string): string {
-  return ctx.absOf ? ctx.absOf(rel) : join(ctx.source.path, ...rel.split('/'))
+  return ctx.absOf ? ctx.absOf(rel) : join(ctx.source.items[0]?.path ?? '', ...rel.split('/'))
 }
 export type ExecContext = {
   runId: string

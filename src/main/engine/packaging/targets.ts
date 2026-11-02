@@ -14,8 +14,16 @@ export function fingerprint(files: FileEntry[], level: number): string {
     .digest('hex')
 }
 
-/** Archive layout for a zip source; entry names inside each archive are rels from the source root. */
-export function computeZipTargets(source: Source, files: FileEntry[]): ZipTarget[] {
+/**
+ * Archive layout for a zip source; entry names inside each archive are the files' rels. With
+ * `itemized` (files named `<item>/…`), "zip each item" works inside each folder item —
+ * `<folder>/<entry>.zip` — and gives each listed file its own `<file>.zip`.
+ */
+export function computeZipTargets(
+  source: Source,
+  files: FileEntry[],
+  itemized = false
+): ZipTarget[] {
   const level = source.zip.level
   if (source.packaging === 'zip-whole') {
     return [
@@ -28,15 +36,43 @@ export function computeZipTargets(source: Source, files: FileEntry[]): ZipTarget
     ]
   }
 
+  if (!itemized) return zipEachEntry(files, '', source.zip.looseFiles, level)
+  // Listed files (no '/') each get their own zip; each folder item is laid out like a folder.
+  const items = new Map<string, FileEntry[]>()
+  const fileItems: FileEntry[] = []
+  for (const f of files) {
+    const slash = f.rel.indexOf('/')
+    if (slash < 0) fileItems.push(f)
+    else items.set(f.rel.slice(0, slash), [...(items.get(f.rel.slice(0, slash)) ?? []), f])
+  }
+  return [
+    ...zipEachEntry(fileItems, '', 'individual', level),
+    ...[...items].flatMap(([item, group]) =>
+      zipEachEntry(group, `${item}/`, source.zip.looseFiles, level)
+    )
+  ]
+}
+
+/**
+ * One archive per entry directly under `prefix` (a folder → its files, a loose file → itself, or
+ * all loose files together in `_files`). Archive names live under `prefix` too.
+ */
+function zipEachEntry(
+  files: FileEntry[],
+  prefix: string,
+  looseFiles: Source['zip']['looseFiles'],
+  level: number
+): ZipTarget[] {
   const dirs = new Map<string, FileEntry[]>()
   const loose: FileEntry[] = []
   for (const f of files) {
-    const slash = f.rel.indexOf('/')
+    const rest = f.rel.slice(prefix.length)
+    const slash = rest.indexOf('/')
     if (slash < 0) {
       loose.push(f)
       continue
     }
-    const top = f.rel.slice(0, slash)
+    const top = rest.slice(0, slash)
     const group = dirs.get(top) ?? []
     group.push(f)
     dirs.set(top, group)
@@ -53,7 +89,7 @@ export function computeZipTargets(source: Source, files: FileEntry[]): ZipTarget
     return name
   }
   const target = (stem: string, group: FileEntry[]): ZipTarget => {
-    const name = claim(stem)
+    const name = `${prefix}${claim(stem)}`
     return {
       base: name.slice(0, -'.zip'.length),
       name,
@@ -63,10 +99,10 @@ export function computeZipTargets(source: Source, files: FileEntry[]): ZipTarget
   }
 
   const targets = [...dirs].map(([dir, group]) => target(dir, group))
-  if (source.zip.looseFiles === 'bundle') {
+  if (looseFiles === 'bundle') {
     if (loose.length > 0) targets.push(target('_files', loose))
   } else {
-    for (const f of loose) targets.push(target(f.rel, [f]))
+    for (const f of loose) targets.push(target(f.rel.slice(prefix.length), [f]))
   }
   return targets
 }

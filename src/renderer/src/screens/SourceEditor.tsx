@@ -1,5 +1,14 @@
 import { useState } from 'react'
-import { FilePlus, FolderOpen, Pencil, Plus, Trash2, X } from 'lucide-react'
+import {
+  File as FileIcon,
+  FilePlus,
+  Folder,
+  FolderPlus,
+  Pencil,
+  Plus,
+  Trash2,
+  X
+} from 'lucide-react'
 import {
   defaultModeFor,
   fileName,
@@ -156,7 +165,7 @@ const FIELD_LABELS: Record<string, string> = {
   slug: 'Folder name at destination',
   name: 'Name',
   path: 'Path',
-  files: 'Files',
+  items: 'Files and folders',
   destinationIds: 'Destinations'
 }
 
@@ -169,19 +178,16 @@ function readableError(e: string): string {
 export function SourceEditor({
   config,
   initial,
-  kind,
   onSave,
   onClose
 }: {
   config: Config
   initial: Source | null
-  /** Folder or Files, chosen before the editor opens; it does not change while editing. */
-  kind: Source['kind']
   onSave: (next: Config) => Promise<string[] | null>
   onClose: () => void
 }): React.JSX.Element {
   const otherSlugs = config.sources.filter((s) => s.id !== initial?.id).map((s) => s.slug)
-  const [s, setS] = useState<Source>(() => initial ?? { ...newSource('', '', otherSlugs), kind })
+  const [s, setS] = useState<Source>(() => initial ?? newSource('', '', otherSlugs))
   const [slugTouched, setSlugTouched] = useState(initial !== null)
   const [modeTouched, setModeTouched] = useState(initial !== null)
   const [excludes, setExcludes] = useState(s.excludes.join('\n'))
@@ -196,27 +202,23 @@ export function SourceEditor({
 
   const setName = (name: string): void =>
     patch(slugTouched ? { name } : { name, slug: slugify(name, otherSlugs) })
-  const browse = async (): Promise<void> => {
-    const p = await api.dialog.pickFolder()
-    if (!p) return
-    const base = p.split(/[\\/]/).filter(Boolean).pop() ?? ''
-    patch({
-      path: p,
-      ...(s.name ? {} : { name: base, ...(slugTouched ? {} : { slug: slugify(base, otherSlugs) }) })
-    })
-  }
-  const addFiles = async (): Promise<void> => {
-    const picked = (await api.dialog.pickFiles()).filter((f) => !s.files.includes(f))
+  // macOS can pick files and folders in one dialog; Windows and Linux need one for each.
+  const mixedPicker = api.app.platform === 'darwin'
+  const addItems = async (mode: 'any' | 'files' | 'folders'): Promise<void> => {
+    // Start next to the last item, so adding more continues where you were.
+    const picked = (await api.dialog.pickItems(mode, s.items.at(-1)?.path)).filter(
+      (p) => !s.items.some((i) => i.path === p.path)
+    )
     if (picked.length === 0) return
-    const first = fileName(picked[0])
+    const first = fileName(picked[0].path)
     patch({
-      files: [...s.files, ...picked],
+      items: [...s.items, ...picked],
       ...(s.name
         ? {}
         : { name: first, ...(slugTouched ? {} : { slug: slugify(first, otherSlugs) }) })
     })
   }
-  const files = s.kind === 'files'
+  const hasFolder = s.items.some((i) => i.kind === 'folder')
   const setPackaging = (packaging: Source['packaging']): void =>
     patch(modeTouched ? { packaging } : { packaging, mode: defaultModeFor(packaging) })
 
@@ -250,9 +252,7 @@ export function SourceEditor({
     <Sheet open onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="flex w-full flex-col gap-0 sm:max-w-xl">
         <SheetHeader className="border-b">
-          <SheetTitle>
-            {initial ? `Edit “${initial.name}”` : files ? 'Add files' : 'Add folder'}
-          </SheetTitle>
+          <SheetTitle>{initial ? `Edit “${initial.name}”` : 'Add source'}</SheetTitle>
           <SheetDescription>What to back up and how to store it.</SheetDescription>
         </SheetHeader>
         <div className="grid flex-1 gap-6 overflow-y-auto p-4">
@@ -264,47 +264,49 @@ export function SourceEditor({
             </div>
           )}
 
-          <Section title={files ? 'Files' : 'Folder'}>
-            {files ? (
-              <div className="grid min-w-0 gap-1 overflow-hidden">
-                {s.files.map((f) => (
-                  <div key={f} className="flex min-w-0 items-center gap-2 text-sm">
-                    <span className="font-medium">{fileName(f)}</span>
+          <Section title="Files and folders">
+            <div className="grid min-w-0 gap-1 overflow-hidden">
+              {s.items.map((it) => {
+                const Icon = it.kind === 'folder' ? Folder : FileIcon
+                const name = fileName(it.path)
+                return (
+                  <div key={it.path} className="flex min-w-0 items-center gap-2 text-sm">
+                    <Icon className="text-muted-foreground size-4 shrink-0" />
+                    <span className="font-medium">{name}</span>
                     <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
-                      {f}
+                      {it.path}
                     </span>
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label={`Remove ${fileName(f)}`}
-                      onClick={() => patch({ files: s.files.filter((x) => x !== f) })}
+                      aria-label={`Remove ${name}`}
+                      onClick={() => patch({ items: s.items.filter((x) => x.path !== it.path) })}
                     >
                       <X />
                     </Button>
                   </div>
-                ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-self-start"
-                  onClick={addFiles}
-                >
-                  <FilePlus /> Add files…
-                </Button>
-                <p className="text-muted-foreground text-xs">
-                  Each file is stored by its name, so two files can&apos;t share a name.
-                </p>
-              </div>
-            ) : (
-              <Field label="Path">
-                <div className="flex gap-2">
-                  <Input value={s.path} onChange={(e) => patch({ path: e.target.value })} />
-                  <Button variant="outline" onClick={browse}>
-                    <FolderOpen /> Browse…
+                )
+              })}
+              <div className="flex gap-2">
+                {mixedPicker ? (
+                  <Button variant="outline" size="sm" onClick={() => addItems('any')}>
+                    <Plus /> Add…
                   </Button>
-                </div>
-              </Field>
-            )}
+                ) : (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => addItems('folders')}>
+                      <FolderPlus /> Add folder…
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => addItems('files')}>
+                      <FilePlus /> Add files…
+                    </Button>
+                  </>
+                )}
+              </div>
+              <p className="text-muted-foreground text-xs">
+                Each file or folder is stored under its own name, so two can&apos;t share a name.
+              </p>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Name">
                 <Input value={s.name} onChange={(e) => setName(e.target.value)} />
@@ -331,12 +333,12 @@ export function SourceEditor({
                 {
                   id: 'zip-whole',
                   label: 'One zip',
-                  hint: files ? 'All the files in one archive' : 'The whole folder in one archive'
+                  hint: 'Everything in one archive'
                 },
                 {
                   id: 'zip-children',
                   label: 'Zip each item',
-                  hint: files ? 'One archive per file' : 'One archive per top-level folder/file'
+                  hint: 'Inside each folder one per entry; one per listed file'
                 }
               ]}
             />
@@ -501,8 +503,8 @@ export function SourceEditor({
             )}
           </Section>
 
-          {!files && <Separator />}
-          {!files && (
+          {hasFolder && <Separator />}
+          {hasFolder && (
             <Section title="Exclusions">
               <Textarea
                 rows={3}
@@ -701,10 +703,7 @@ export function SourceEditor({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={submit}
-            disabled={(files ? s.files.length === 0 : !s.path) || !s.name.trim()}
-          >
+          <Button onClick={submit} disabled={s.items.length === 0 || !s.name.trim()}>
             Save
           </Button>
         </SheetFooter>

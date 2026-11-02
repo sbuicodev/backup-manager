@@ -66,17 +66,20 @@ to be split into chunks.
 
 ### 2. Add sources
 
-A source is a folder to back up. Click **Add source**, pick the folder, and choose how to store it.
+A source is a list of files and folders to back up together, with one name, schedule and set of
+destinations. Click **Add source**, add files and folders (on macOS one **Add…** picks both; on
+Windows and Linux use **Add folder…** and **Add files…**), and choose how to store them. Each file
+or folder is stored under its own name, so two in one source can't share a name.
 
 ![Source editor](docs/screenshots/source-editor.png)
 
 **Packaging**
 
-| Option        | Result at the destination                                                      |
-| ------------- | ------------------------------------------------------------------------------ |
-| Copy files    | The files themselves, easy to browse                                           |
-| One zip       | The whole folder in one archive                                                |
-| Zip each item | One archive per top-level folder (loose files individually or in `_files.zip`) |
+| Option        | Result at the destination                                                                                                |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Copy files    | The files themselves, easy to browse                                                                                     |
+| One zip       | Everything in one archive                                                                                                |
+| Zip each item | Inside each folder, one archive per entry (its loose files individually or in `_files.zip`); one archive per listed file |
 
 **Mode**
 
@@ -95,17 +98,19 @@ Each source also has **exclusions** (glob patterns such as `*.tmp` or `node_modu
 the global ones in Settings), its **destinations** (all, or a selection) and a **schedule**: manual
 only, every few hours, daily, or weekly on chosen days.
 
-What lands where, for a source with folder name `S`:
+What lands where, for a source with folder name `S` holding a folder `Photos` and a file
+`tax.pdf`:
 
-| Mode     | Copy files              | One zip                   | Zip each item                    |
-| -------- | ----------------------- | ------------------------- | -------------------------------- |
-| Mirror   | `S/…`                   | `S/S.zip`                 | `S/<item>.zip`                   |
-| Snapshot | `S/2026-10-26_154307/…` | `S/2026-10-26_154307.zip` | `S/2026-10-26_154307/<item>.zip` |
+| Mode     | Copy files                                  | One zip                   | Zip each item                                             |
+| -------- | ------------------------------------------- | ------------------------- | --------------------------------------------------------- |
+| Mirror   | `S/Photos/…`, `S/tax.pdf`                   | `S/S.zip`                 | `S/Photos/<entry>.zip`, `S/tax.pdf.zip`                   |
+| Snapshot | `S/2026-10-26_154307/Photos/…`, `…/tax.pdf` | `S/2026-10-26_154307.zip` | `S/2026-10-26_154307/Photos/<entry>.zip`, `…/tax.pdf.zip` |
 
 A mirror also keeps a few hidden items of its own in `S/`: `.trash/` for removed files,
 `.backup-manager.json` (zip mirrors) and `.backup-manager-layout`. A file or folder in your
-source with one of those names at its top level is skipped with a warning. Backups made by
-earlier versions in `S/current/` are moved up into `S/` on their next run.
+source named like one of those is skipped with a warning. Mirror backups made by earlier versions
+(in `S/current/`, or a folder's contents directly in `S/`) are moved into `S/<folder>/` on their
+next run, by renaming only; zip mirrors are rebuilt once.
 
 ### 3. Preview and run
 

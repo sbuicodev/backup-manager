@@ -11,10 +11,11 @@ import {
 import {
   MTIME_TOLERANCE_MS,
   basePlan,
+  isAtOrUnder,
   looksUnmounted,
   removalCounts,
   removeByPolicy,
-  mirrorReadRoot,
+  mirrorLayout,
   mirrorSkipTop,
   settleLayout,
   unreadableRels,
@@ -78,34 +79,69 @@ type ArchiveWork = { target: ZipTarget; prev?: ManifestArchive; parts: PartWork[
 
 export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
   const { slug } = ctx.source
-  // Planning reads from where the archives are now (old backups: <slug>/current/); a run moves
-  // them up into <slug>/ first, so every name below stays valid.
-  const { read, legacy } = await mirrorReadRoot(ctx)
+  // Planning reads from where the archives are now (older layouts, see mirrorLayout); a run
+  // moves them into place first, so every name below stays valid.
+  const layout = await mirrorLayout(ctx)
   const current = slug
   const manifestRel = `${slug}/${MANIFEST_NAME}`
   const level = ctx.source.zip.level
-  const targets = computeZipTargets(ctx.source, ctx.srcFiles)
-  const manifest = await readManifest(ctx, `${read}/${MANIFEST_NAME}`)
+  const targets = computeZipTargets(ctx.source, ctx.srcFiles, ctx.itemized)
+  // A move into an item's folder renames every archive, so the old archive list no longer applies.
+  const manifest =
+    layout.move === 'current-into' || layout.move === 'flat-into'
+      ? ({ version: 2, archives: {} } satisfies ManifestV2)
+      : await readManifest(ctx, `${layout.reads[0].root}/${MANIFEST_NAME}`)
 
   // Archives with members the walk could not read keep their previous state (all parts).
   const unreadableTops = new Set(unreadableRels(ctx).map((r) => r.split('/')[0]))
   const unreadableTopLevel = unreadableRels(ctx).some((r) => !r.includes('/'))
   const isBundle = ctx.source.zip.looseFiles === 'bundle'
   const stem = (base: string): string => base.replace(/-\d+$/, '')
+  const unreadable = unreadableRels(ctx)
+  // Itemized: an archive is kept when an unreadable path is inside what it holds, or holds it
+  // (a whole item that could not be read); a bundle covers its folder's loose files.
+  const coversItemized = (base: string): boolean => {
+    const s = stem(base)
+    const dir = s.includes('/') ? s.slice(0, s.lastIndexOf('/')) : ''
+    return unreadable.some((u) =>
+      isBundle &&
+      s.endsWith('_files') &&
+      (u.slice(0, u.lastIndexOf('/')) === dir || isAtOrUnder(dir, u))
+        ? true
+        : isAtOrUnder(u, s) || isAtOrUnder(s, u)
+    )
+  }
   const coversUnreadable = (base: string, files: FileEntry[]): boolean =>
-    unreadableTops.size > 0 &&
-    (ctx.source.packaging === 'zip-whole' ||
-      unreadableTops.has(stem(base)) ||
-      files.some((f) => unreadableTops.has(f.rel.split('/')[0])) ||
-      // Conservative: an unreadable top-level entry may be a loose file in the bundle.
-      (isBundle && unreadableTopLevel && stem(base) === '_files'))
+    ctx.itemized && ctx.source.packaging !== 'zip-whole'
+      ? coversItemized(base)
+      : unreadableTops.size > 0 &&
+        (ctx.source.packaging === 'zip-whole' ||
+          unreadableTops.has(stem(base)) ||
+          files.some((f) => unreadableTops.has(f.rel.split('/')[0])) ||
+          // Conservative: an unreadable top-level entry may be a loose file in the bundle.
+          (isBundle && unreadableTopLevel && stem(base) === '_files'))
 
   const skipTop = mirrorSkipTop(ctx)
-  const existing = (await ctx.dest.list(read))
-    .filter((e) => !e.isDir && ARCHIVE_FILE.test(e.name))
-    .map((e) => e.name)
-    // Snapshot zips from an earlier snapshot mode share the folder: never ours unless produced.
-    .filter((n) => !skipTop(n) || targets.some((t) => ownsFile(t.base, n)))
+  // The mirror's own hidden items and snapshot zips at the top of the backup folder are never
+  // archives of this mirror (unless a target produces that very name).
+  const ours = (name: string): boolean =>
+    !skipTop(name) || targets.some((t) => ownsFile(t.base, name))
+  const archivesIn = async (root: string, prefix: string): Promise<string[]> =>
+    (await ctx.dest.list(root))
+      .filter((e) => !e.isDir && ARCHIVE_FILE.test(e.name) && (root !== slug || ours(e.name)))
+      .map((e) => `${prefix}${e.name}`)
+  const existing: string[] = []
+  for (const { root, prefix } of layout.reads) {
+    existing.push(...(await archivesIn(root, prefix)))
+    // In layout 3 a folder item's archives sit in its own subfolder (also one no longer listed).
+    if (prefix === '' && ctx.itemized && (layout.move === 'none' || layout.move === 'mark')) {
+      for (const e of await ctx.dest.list(root)) {
+        if (e.isDir && !skipTop(e.name)) {
+          existing.push(...(await archivesIn(`${root}/${e.name}`, `${e.name}/`)))
+        }
+      }
+    }
+  }
   const emptySource = looksUnmounted(ctx, existing.length > 0)
 
   const partFingerprint = (p: PartPlan): string =>
@@ -184,7 +220,7 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
     asJobAbort(ctx.dest, async () => {
       const run = new JobRun(ctx, x, plan.bytes)
       await ctx.dest.removePartials(slug, false)
-      await settleLayout(ctx, legacy)
+      await settleLayout(ctx, layout)
       await ctx.dest.removePartials(current, true)
       if (emptySource) warnEmptySource(run)
       const archives: Record<string, ManifestArchive> = {}
@@ -241,6 +277,9 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
         for (const pw of w.parts.filter((p) => p.write)) {
           x.signal.throwIfAborted()
           const file = partBaseName(base, pw.part)
+          if (file.includes('/')) {
+            await ctx.dest.mkdirp(`${current}/${file.slice(0, file.lastIndexOf('/'))}`)
+          }
           let entryErrors = 0
           const r = await run.guard(
             file,

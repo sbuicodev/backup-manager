@@ -55,38 +55,69 @@ export const DestinationSchema = z.object({
   ownerSourceId: z.string().nullable().default(null)
 })
 
-export const SourceSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  slug: Slug,
-  /** 'folder' backs up `path`; 'files' backs up the listed files, each stored by its name. */
-  kind: z.enum(['folder', 'files']).default('folder'),
-  path: z.string(), // absolute for folders (checked below); unused for files
-  files: z.array(AbsolutePath).default([]),
-  enabled: z.boolean(),
-  mode: z.enum(['mirror', 'snapshot']),
-  packaging: z.enum(['copy', 'zip-whole', 'zip-children']),
-  zip: z.object({
-    level: z.number().int().min(0).max(9),
-    looseFiles: z.enum(['individual', 'bundle']),
-    partLimitBytes: PartBytes.default(null),
-    oversized: z.enum(['own-part', 'chunk']).default('own-part'),
-    chunkBytes: PartBytes.default(null)
-  }),
-  mirror: z.object({
-    deletion: z.enum(['trash', 'exact', 'never']),
-    trashRetentionDays: z.number().int().min(0).nullable()
-  }),
-  snapshot: z.object({
-    keepMin: z.number().int().min(1),
-    maxAgeDays: z.number().int().min(0).nullable()
-  }),
-  excludes: z.array(z.string()),
-  useGlobalExcludes: z.boolean(),
-  destinationIds: z.union([z.literal('all'), z.array(z.string())]),
-  schedule: ScheduleSchema.nullable(),
-  retryWhenAvailable: z.boolean()
+/** One file or folder a source backs up; at the destination it is stored under its own name. */
+export const SourceItemSchema = z.object({
+  path: AbsolutePath,
+  kind: z.enum(['file', 'folder'])
 })
+
+/**
+ * Configs written before sources became item lists had either `kind: 'folder'` + `path` (the
+ * folder's contents stored directly in the backup folder) or `kind: 'files'` + `files`.
+ */
+function itemsFromLegacySource(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || 'items' in raw) return raw
+  const { kind, path, files, ...rest } = raw as Record<string, unknown>
+  if (kind === 'files') {
+    const list = Array.isArray(files) ? files : []
+    return { ...rest, items: list.map((f) => ({ path: f, kind: 'file' })) }
+  }
+  const p = typeof path === 'string' ? path : ''
+  return {
+    ...rest,
+    items: p ? [{ path: p, kind: 'folder' }] : [],
+    // Its backups still hold the folder's contents directly; a mirror run moves them down.
+    legacyFlatName: p ? fileName(p) : null
+  }
+}
+
+export const SourceSchema = z.preprocess(
+  itemsFromLegacySource,
+  z.object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    slug: Slug,
+    items: z.array(SourceItemSchema),
+    /**
+     * Set for sources converted from a one-folder config: the name of the folder whose contents a
+     * mirror made before this change holds directly in the backup folder (moved down on its next run).
+     */
+    legacyFlatName: z.string().nullable().default(null),
+    enabled: z.boolean(),
+    mode: z.enum(['mirror', 'snapshot']),
+    packaging: z.enum(['copy', 'zip-whole', 'zip-children']),
+    zip: z.object({
+      level: z.number().int().min(0).max(9),
+      looseFiles: z.enum(['individual', 'bundle']),
+      partLimitBytes: PartBytes.default(null),
+      oversized: z.enum(['own-part', 'chunk']).default('own-part'),
+      chunkBytes: PartBytes.default(null)
+    }),
+    mirror: z.object({
+      deletion: z.enum(['trash', 'exact', 'never']),
+      trashRetentionDays: z.number().int().min(0).nullable()
+    }),
+    snapshot: z.object({
+      keepMin: z.number().int().min(1),
+      maxAgeDays: z.number().int().min(0).nullable()
+    }),
+    excludes: z.array(z.string()),
+    useGlobalExcludes: z.boolean(),
+    destinationIds: z.union([z.literal('all'), z.array(z.string())]),
+    schedule: ScheduleSchema.nullable(),
+    retryWhenAvailable: z.boolean()
+  })
+)
 
 /** Normalizes a path for nesting checks: '/' separators, no trailing slash, lower case. */
 function normPath(p: string): string {
@@ -116,34 +147,19 @@ export const ConfigSchema = z
   })
   .superRefine((cfg, ctx) => {
     cfg.sources.forEach((s, i) => {
-      if (s.kind === 'folder' && !ABSOLUTE_PATH.test(s.path)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['sources', i, 'path'],
-          message: 'must be an absolute path'
-        })
-      }
-      if (s.kind === 'files') {
-        if (s.files.length === 0) {
-          ctx.addIssue({
-            code: 'custom',
-            path: ['sources', i, 'files'],
-            message: 'add at least one file'
-          })
-        }
-        const seen = new Map<string, string>()
-        for (const f of s.files) {
-          const name = fileName(f)
-          const prev = seen.get(name.toLowerCase())
-          if (prev !== undefined) {
-            ctx.addIssue({
-              code: 'custom',
-              path: ['sources', i, 'files'],
-              message: `"${prev}" and "${f}" have the same name "${name}"`
-            })
-          }
-          seen.set(name.toLowerCase(), f)
-        }
+      const issue = (message: string): void =>
+        ctx.addIssue({ code: 'custom', path: ['sources', i, 'items'], message })
+      if (s.items.length === 0) issue('add at least one file or folder')
+      const seen = new Map<string, string>()
+      for (const it of s.items) {
+        const name = fileName(it.path)
+        const prev = seen.get(name.toLowerCase())
+        if (prev !== undefined) issue(`"${prev}" and "${it.path}" have the same name "${name}"`)
+        seen.set(name.toLowerCase(), it.path)
+        const outer = s.items.find(
+          (o) => o !== it && o.kind === 'folder' && isSameOrInside(it.path, o.path)
+        )
+        if (outer) issue(`"${it.path}" is already inside "${outer.path}"`)
       }
     })
     const slugs = new Map<string, number>()
@@ -190,29 +206,20 @@ export const ConfigSchema = z
         }
       }
       for (const d of cfg.destinations) {
-        if (s.kind === 'files') {
-          const inside = s.files.find((f) => isSameOrInside(f, d.path))
-          if (inside) {
+        for (const it of s.items) {
+          if (isSameOrInside(it.path, d.path)) {
             ctx.addIssue({
               code: 'custom',
-              path: ['sources', i, 'files'],
-              message: `"${inside}" is inside destination "${d.name}"`
+              path: ['sources', i, 'items'],
+              message: `"${it.path}" is inside destination "${d.name}"`
+            })
+          } else if (it.kind === 'folder' && isSameOrInside(d.path, it.path)) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['sources', i, 'items'],
+              message: `destination "${d.name}" is inside "${it.path}"`
             })
           }
-          continue
-        }
-        if (isSameOrInside(s.path, d.path)) {
-          ctx.addIssue({
-            code: 'custom',
-            path: ['sources', i, 'path'],
-            message: `source "${s.name}" is inside destination "${d.name}"`
-          })
-        } else if (isSameOrInside(d.path, s.path)) {
-          ctx.addIssue({
-            code: 'custom',
-            path: ['sources', i, 'path'],
-            message: `destination "${d.name}" is inside source "${s.name}"`
-          })
         }
       }
     })
@@ -223,6 +230,7 @@ export type Schedule = z.infer<typeof ScheduleSchema>
 export type Settings = z.infer<typeof SettingsSchema>
 export type Destination = z.infer<typeof DestinationSchema>
 export type Source = z.infer<typeof SourceSchema>
+export type SourceItem = z.infer<typeof SourceItemSchema>
 export type Config = z.infer<typeof ConfigSchema>
 
 export function defaultConfig(): Config {
@@ -267,9 +275,8 @@ export function newSource(path: string, name: string, existingSlugs: string[]): 
     id: crypto.randomUUID(),
     name,
     slug: slugify(name, existingSlugs),
-    kind: 'folder',
-    path,
-    files: [],
+    items: path ? [{ path, kind: 'folder' }] : [],
+    legacyFlatName: null,
     enabled: true,
     mode: 'mirror',
     packaging: 'copy',
