@@ -51,7 +51,7 @@ export function backupSummary(source: Source, last: string | null, now: Date): s
 export type Tone = 'ok' | 'waiting' | 'failed' | 'idle' | 'off'
 
 /** A short, readable cause for a failed job. */
-function failure(r: PairResult): string {
+export function failure(r: { reason?: string; error?: string }): string {
   if (r.reason === 'destination-lost') return 'drive disconnected'
   if (/ENOSPC/.test(r.error ?? '')) return 'disk full'
   if (/EACCES|EPERM/.test(r.error ?? '')) return 'no permission'

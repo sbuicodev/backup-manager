@@ -25,7 +25,7 @@ import { headerRetryText } from '@/lib/retry'
 import { cn } from '@/lib/utils'
 import { useRunProgress } from '@/hooks/useRunProgress'
 import { DrivePage } from '@/screens/DrivePage'
-import { History } from '@/screens/History'
+import { ActivityPage } from '@/screens/ActivityPage'
 import { BackupEditPage, BackupPage } from '@/screens/BackupPage'
 import {
   AlertDialog,
@@ -381,11 +381,11 @@ function App(): React.JSX.Element {
                   />
                 )}
                 {selection.kind === 'activity' && (
-                  <History
+                  <ActivityPage
                     config={config}
                     status={status}
-                    openId={runId}
-                    refreshKey={progress.lastLog?.id ?? null}
+                    progress={progress}
+                    openRunId={runId}
                   />
                 )}
                 {selection.kind === 'settings' && (
