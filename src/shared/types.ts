@@ -104,3 +104,16 @@ export type ChangePage = {
   counts: Record<ChangeAction, number>
   items: ChangeEntry[]
 }
+
+/** The newest result of one backup × drive pair, from run history. */
+export type PairResult = {
+  sourceId: string
+  destId: string
+  runId: string
+  endedAt: string
+  status: JobStatus
+  reason?: JobReason
+  error?: string
+  changeCount?: number
+  bytesWritten: number
+}

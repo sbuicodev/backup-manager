@@ -1,0 +1,115 @@
+import type { Destination, Schedule, Source } from '@shared/schema'
+import type { PairResult, SchedulerStatus } from '@shared/types'
+import { checkClock, retryFor } from './retry'
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const WEEK = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
+const pad = (n: number): string => String(n).padStart(2, '0')
+const plural = (n: number, unit: string): string => `${n} ${unit}${n === 1 ? '' : 's'}`
+
+/** Past time in words: "just now", "5 minutes ago", "2 hours ago", "yesterday", "Sun", a date. */
+export function formatAgo(at: Date, now: Date): string {
+  const diff = now.getTime() - at.getTime()
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${plural(Math.floor(diff / 60_000), 'minute')} ago`
+  if (at.toDateString() === now.toDateString()) {
+    return `${plural(Math.floor(diff / 3_600_000), 'hour')} ago`
+  }
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (at.toDateString() === yesterday.toDateString()) return 'yesterday'
+  if (diff < 6 * 86_400_000) return DAY_NAMES[at.getDay()]
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`
+}
+
+function schedulePhrase(s: Schedule | null): string {
+  if (!s) return 'runs only when you click Back up now'
+  if (s.kind === 'interval')
+    return s.everyHours === 1 ? 'every hour' : `every ${s.everyHours} hours`
+  if (s.kind === 'daily') return `every day at ${s.time}`
+  const days = WEEK.filter((d) => s.days.includes(d)).map((d) => d[0].toUpperCase() + d.slice(1))
+  return `every ${days.join(', ')} at ${s.time}`
+}
+
+const PACKAGING: Record<Source['packaging'], string> = {
+  copy: 'plain files',
+  'zip-whole': 'one zip',
+  'zip-children': 'a zip per item'
+}
+
+/** The one-line description under a backup's name. `last`: when it last finished on any drive. */
+export function backupSummary(source: Source, last: string | null, now: Date): string {
+  if (!source.setupComplete) return 'Not set up'
+  return [
+    source.mode === 'mirror' ? 'Mirror' : 'Versions',
+    PACKAGING[source.packaging],
+    schedulePhrase(source.schedule),
+    last ? `last backed up ${formatAgo(new Date(last), now)}` : 'not backed up yet'
+  ].join(' · ')
+}
+
+export type Tone = 'ok' | 'waiting' | 'failed' | 'idle' | 'off'
+
+/** A short, readable cause for a failed job. */
+function failure(r: PairResult): string {
+  if (r.reason === 'destination-lost') return 'drive disconnected'
+  if (/ENOSPC/.test(r.error ?? '')) return 'disk full'
+  if (/EACCES|EPERM/.test(r.error ?? '')) return 'no permission'
+  return 'error'
+}
+
+/** The status of one backup on one drive, as shown in its Where row. */
+export function pairStatus(
+  source: Source,
+  dest: Destination,
+  result: PairResult | null,
+  status: SchedulerStatus | null,
+  available: boolean | undefined,
+  now: Date
+): { tone: Tone; text: string; canCheckNow: boolean } {
+  const quiet = { canCheckNow: false }
+  if (!dest.enabled) return { tone: 'off', text: 'turned off', ...quiet }
+  const retry = retryFor(status, source.id, dest.id)
+  if (retry) {
+    return {
+      tone: 'waiting',
+      text: `waiting · next check ${checkClock(retry.nextRetryAt, now)}`,
+      canCheckNow: true
+    }
+  }
+  if (result?.status === 'failed')
+    return { tone: 'failed', text: `failed · ${failure(result)}`, ...quiet }
+  if (result && (result.status === 'completed' || result.status === 'completed-with-warnings')) {
+    const ago = formatAgo(new Date(result.endedAt), now)
+    return result.status === 'completed'
+      ? { tone: 'ok', text: ago, ...quiet }
+      : { tone: 'waiting', text: `${ago} · with warnings`, ...quiet }
+  }
+  if (available === false) return { tone: 'idle', text: 'not connected', ...quiet }
+  if (result?.status === 'cancelled') return { tone: 'idle', text: 'cancelled', ...quiet }
+  return { tone: 'idle', text: 'never', ...quiet }
+}
+
+export type BackupTone = 'ok' | 'waiting' | 'failed' | 'notSetUp' | 'paused' | 'running' | 'idle'
+
+/** The status dot of a backup in the sidebar, from its current drives only. */
+export function backupTone(
+  source: Source,
+  dests: Destination[],
+  results: PairResult[],
+  status: SchedulerStatus | null,
+  running: boolean
+): BackupTone {
+  if (running) return 'running'
+  if (!source.setupComplete) return 'notSetUp'
+  if (!source.enabled) return 'paused'
+  const ids = new Set(dests.map((d) => d.id))
+  const mine = results.filter((r) => r.sourceId === source.id && ids.has(r.destId))
+  if (mine.some((r) => r.status === 'failed')) return 'failed'
+  const waiting =
+    dests.some((d) => retryFor(status, source.id, d.id)) ||
+    mine.some((r) => r.status === 'completed-with-warnings')
+  if (waiting) return 'waiting'
+  if (mine.some((r) => r.status === 'completed')) return 'ok'
+  return 'idle'
+}
