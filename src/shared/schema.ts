@@ -8,13 +8,16 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 const ABSOLUTE_PATH = /^(\/|[A-Za-z]:[\\/]|\\\\)/
 const AbsolutePath = z.string().regex(ABSOLUTE_PATH, 'must be an absolute path')
 
-/** A slug is used as a folder name on every destination: it must already be in slugify's safe form. */
+/**
+ * The source's folder name on every destination. Spaces are fine; it must already be in
+ * slugify's safe form (no characters Windows forbids, no leading/trailing space or dot).
+ */
 const Slug = z
   .string()
   .min(1)
   .refine((s) => slugify(s, []) === s && !s.toLowerCase().endsWith('.bm-partial'), {
     message:
-      'slug must be a plain folder name (letters, digits, - _ .; no separators or reserved names)'
+      'can\'t contain < > : " / \\ | ? *, start or end with a space or dot, or be a reserved name'
   })
 
 export const WeekdaySchema = z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
@@ -240,7 +243,11 @@ export function defaultConfig(): Config {
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
 
 export function slugify(name: string, existing: string[]): string {
-  let base = name.replace(/[<>:"/\\|?*\x00-\x1f\s]+/g, '-').replace(/^[-.]+|[-.]+$/g, '')
+  // Characters Windows forbids become spaces; runs of whitespace collapse to one space.
+  let base = name
+    .replace(/[<>:"/\\|?*\x00-\x1f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s.]+|[\s.]+$/g, '')
   if (base === '') base = 'source'
   if (RESERVED.test(base)) base = `${base}-1`
   const taken = new Set(existing.map((s) => s.toLowerCase()))

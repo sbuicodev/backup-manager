@@ -36,6 +36,15 @@ function showWindow(): void {
   if (process.platform === 'darwin') void app.dock?.show()
 }
 
+/**
+ * Window native dialogs attach to (a sheet on macOS). Without a parent the panel can open while
+ * the app window keeps keyboard focus, so it shows the wrong cursor and ignores ⌘/⇧-clicks.
+ */
+function dialogParent(): BrowserWindow {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  return mainWindow!
+}
+
 function navigate(screen: Screen, arg?: string): void {
   showWindow()
   const go = (): void => send(CH.navigate, screen, arg)
@@ -148,24 +157,26 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc(
       createHandlers(svc, {
         pickFiles: async () => {
-          const r = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+          const r = await dialog.showOpenDialog(dialogParent(), {
+            properties: ['openFile', 'multiSelections']
+          })
           return r.canceled ? [] : r.filePaths
         },
         pickFolder: async () => {
-          const r = await dialog.showOpenDialog({
+          const r = await dialog.showOpenDialog(dialogParent(), {
             properties: ['openDirectory', 'createDirectory']
           })
           return r.canceled ? null : (r.filePaths[0] ?? null)
         },
         saveFile: async (defaultName) => {
-          const r = await dialog.showSaveDialog({
+          const r = await dialog.showSaveDialog(dialogParent(), {
             defaultPath: defaultName,
             filters: [{ name: 'JSON', extensions: ['json'] }]
           })
           return r.canceled ? null : (r.filePath ?? null)
         },
         openFile: async () => {
-          const r = await dialog.showOpenDialog({
+          const r = await dialog.showOpenDialog(dialogParent(), {
             properties: ['openFile'],
             filters: [{ name: 'JSON', extensions: ['json'] }]
           })

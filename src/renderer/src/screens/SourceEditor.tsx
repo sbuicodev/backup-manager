@@ -151,6 +151,21 @@ function defaultSchedule(kind: Schedule['kind']): Schedule {
   return { kind, days: ['mon'], time: '02:00' }
 }
 
+/** Field labels for config paths in validation errors ("sources.0.slug: …"). */
+const FIELD_LABELS: Record<string, string> = {
+  slug: 'Folder name at destination',
+  name: 'Name',
+  path: 'Path',
+  files: 'Files',
+  destinationIds: 'Destinations'
+}
+
+/** "sources.0.slug: msg" → "Folder name at destination: msg"; other errors stay as they are. */
+function readableError(e: string): string {
+  const m = /^sources\.\d+\.(\w+)[^:]*: (.*)$/s.exec(e)
+  return m && FIELD_LABELS[m[1]] ? `${FIELD_LABELS[m[1]]}: ${m[2]}` : e
+}
+
 export function SourceEditor({
   config,
   initial,
@@ -222,9 +237,9 @@ export function SourceEditor({
         : [...config.sources, source]
     }
     const v = validateConfig(next)
-    if (!v.ok) return setErrors(v.errors)
+    if (!v.ok) return setErrors(v.errors.map(readableError))
     const saveErrors = await onSave(next)
-    if (saveErrors) setErrors(saveErrors)
+    if (saveErrors) setErrors(saveErrors.map(readableError))
     else onClose()
   }
 

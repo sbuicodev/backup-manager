@@ -40,8 +40,10 @@ describe('schema', () => {
     })
   })
 
-  test('slugify strips characters illegal on Windows and dedupes', () => {
-    expect(slugify('My: Docs/"2024"?', [])).toBe('My-Docs-2024')
+  test('slugify keeps spaces, strips characters illegal on Windows and dedupes', () => {
+    expect(slugify('Logic Projects', [])).toBe('Logic Projects')
+    expect(slugify('My: Docs/"2024"?', [])).toBe('My Docs 2024')
+    expect(slugify('  Photos. ', [])).toBe('Photos')
     expect(slugify('Docs', ['Docs'])).toBe('Docs-2')
     expect(slugify('docs', ['Docs', 'docs-2'])).toBe('docs-3')
     expect(slugify('CON', [])).toBe('CON-1')
@@ -164,21 +166,35 @@ describe('schema', () => {
 })
 
 describe('slug and path safety', () => {
-  test.each(['.', '..', 'a/b', 'a\\b', 'trailing.', ' lead', 'CON', 'nul', 'x.bm-partial', 'a:b'])(
-    'rejects slug %j',
-    (slug) => {
-      const cfg = cfgWith((c) => c.sources.push({ ...newSource('/a', 'A', []), slug }))
-      expect(errorsOf(cfg).join('\n')).toMatch(/slug/)
-    }
-  )
+  test.each([
+    '.',
+    '..',
+    'a/b',
+    'a\\b',
+    'trailing.',
+    'trailing ',
+    ' lead',
+    'CON',
+    'nul',
+    'x.bm-partial',
+    'a:b'
+  ])('rejects slug %j', (slug) => {
+    const cfg = cfgWith((c) => c.sources.push({ ...newSource('/a', 'A', []), slug }))
+    expect(errorsOf(cfg).join('\n')).toMatch(/slug/)
+  })
 
-  test.each(['Docs', 'Docs-2', 'My-Documents', 'CON-1', 'photos.2024'])(
-    'accepts slug %j',
-    (slug) => {
-      const cfg = cfgWith((c) => c.sources.push({ ...newSource('/a', 'A', []), slug }))
-      expect(errorsOf(cfg)).toEqual([])
-    }
-  )
+  test.each([
+    'Docs',
+    'Docs-2',
+    'My-Documents',
+    'CON-1',
+    'photos.2024',
+    'Logic Projects',
+    'My Docs (2024)'
+  ])('accepts slug %j', (slug) => {
+    const cfg = cfgWith((c) => c.sources.push({ ...newSource('/a', 'A', []), slug }))
+    expect(errorsOf(cfg)).toEqual([])
+  })
 
   test.each(['relative/dir', './x', '~/Documents', 'C:relative'])(
     'rejects relative path %j',
