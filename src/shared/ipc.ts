@@ -25,7 +25,7 @@ export type Api = {
     reset(): Promise<void>
     onChange(cb: (state: ConfigState) => void): () => void
   }
-  dialog: { pickFolder(): Promise<string | null> }
+  dialog: { pickFolder(): Promise<string | null>; pickFiles(): Promise<string[]> }
   destinations: { availability(): Promise<Record<string, boolean>> }
   run: {
     plan(sourceIds?: string[]): Promise<Plan>
@@ -59,6 +59,7 @@ export const CH = {
   configImport: 'config:import',
   configReset: 'config:reset',
   pickFolder: 'dialog:pickFolder',
+  pickFiles: 'dialog:pickFiles',
   availability: 'destinations:availability',
   runPlan: 'run:plan',
   runStart: 'run:start',

@@ -21,7 +21,7 @@ const api: Api = {
     reset: () => invoke(CH.configReset),
     onChange: (cb) => subscribe(CH.configChanged, cb)
   },
-  dialog: { pickFolder: () => invoke(CH.pickFolder) },
+  dialog: { pickFolder: () => invoke(CH.pickFolder), pickFiles: () => invoke(CH.pickFiles) },
   destinations: { availability: () => invoke(CH.availability) },
   run: {
     plan: (ids) => invoke(CH.runPlan, ids),

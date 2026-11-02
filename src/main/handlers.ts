@@ -6,6 +6,7 @@ import type { Services } from './services'
 
 export type Dialogs = {
   pickFolder(): Promise<string | null>
+  pickFiles(): Promise<string[]>
   saveFile(defaultName: string): Promise<string | null>
   openFile(): Promise<string | null>
 }
@@ -58,6 +59,7 @@ export function createHandlers(services: Services, dialogs: Dialogs): Record<str
     },
     [CH.configReset]: async () => services.resetConfig(),
     [CH.pickFolder]: async () => dialogs.pickFolder(),
+    [CH.pickFiles]: async () => dialogs.pickFiles(),
     [CH.availability]: async () => services.availability(),
     [CH.runPlan]: async (ids) => services.plan(parse(SourceIds, ids)),
     [CH.runStart]: async (ids) => scheduler.runNow(parse(SourceIds, ids))?.id ?? null,

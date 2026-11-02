@@ -54,7 +54,10 @@ export const SourceSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   slug: Slug,
-  path: AbsolutePath,
+  /** 'folder' backs up `path`; 'files' backs up the listed files, each stored by its name. */
+  kind: z.enum(['folder', 'files']).default('folder'),
+  path: z.string(), // absolute for folders (checked below); unused for files
+  files: z.array(AbsolutePath).default([]),
   enabled: z.boolean(),
   mode: z.enum(['mirror', 'snapshot']),
   packaging: z.enum(['copy', 'zip-whole', 'zip-children']),
@@ -87,6 +90,11 @@ function normPath(p: string): string {
   return n.toLowerCase()
 }
 
+/** Last segment of a path, with either separator. */
+export function fileName(p: string): string {
+  return p.split(/[\\/]/).filter(Boolean).pop() ?? p
+}
+
 function isSameOrInside(child: string, parent: string): boolean {
   const c = normPath(child)
   const p = normPath(parent)
@@ -102,6 +110,37 @@ export const ConfigSchema = z
     sources: z.array(SourceSchema)
   })
   .superRefine((cfg, ctx) => {
+    cfg.sources.forEach((s, i) => {
+      if (s.kind === 'folder' && !ABSOLUTE_PATH.test(s.path)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['sources', i, 'path'],
+          message: 'must be an absolute path'
+        })
+      }
+      if (s.kind === 'files') {
+        if (s.files.length === 0) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['sources', i, 'files'],
+            message: 'add at least one file'
+          })
+        }
+        const seen = new Map<string, string>()
+        for (const f of s.files) {
+          const name = fileName(f)
+          const prev = seen.get(name.toLowerCase())
+          if (prev !== undefined) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['sources', i, 'files'],
+              message: `"${prev}" and "${f}" have the same name "${name}"`
+            })
+          }
+          seen.set(name.toLowerCase(), f)
+        }
+      }
+    })
     const slugs = new Map<string, number>()
     cfg.sources.forEach((s, i) => {
       const key = s.slug.toLowerCase()
@@ -146,6 +185,17 @@ export const ConfigSchema = z
         }
       }
       for (const d of cfg.destinations) {
+        if (s.kind === 'files') {
+          const inside = s.files.find((f) => isSameOrInside(f, d.path))
+          if (inside) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['sources', i, 'files'],
+              message: `"${inside}" is inside destination "${d.name}"`
+            })
+          }
+          continue
+        }
         if (isSameOrInside(s.path, d.path)) {
           ctx.addIssue({
             code: 'custom',
@@ -203,7 +253,9 @@ export function newSource(path: string, name: string, existingSlugs: string[]): 
     id: crypto.randomUUID(),
     name,
     slug: slugify(name, existingSlugs),
+    kind: 'folder',
     path,
+    files: [],
     enabled: true,
     mode: 'mirror',
     packaging: 'copy',

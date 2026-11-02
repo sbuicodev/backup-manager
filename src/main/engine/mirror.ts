@@ -1,9 +1,9 @@
-import { join } from 'node:path'
 import type { FileEntry } from '@shared/types'
 import {
   JobRun,
   asJobAbort,
   caseConflicts,
+  sourceAbs,
   warnCaseConflict,
   effectiveExcludes,
   type ExecContext,
@@ -85,11 +85,8 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
       const copyOne = async (f: FileEntry, isUpdate: boolean): Promise<void> => {
         if (conflicts.has(f.rel)) return warnCaseConflict(run, f.rel)
         const ok = await run.guard(f.rel, () =>
-          ctx.dest.copyFileIn(
-            join(ctx.source.path, ...f.rel.split('/')),
-            `${current}/${f.rel}`,
-            x.signal,
-            (n) => run.progress(f.rel, n)
+          ctx.dest.copyFileIn(sourceAbs(ctx, f.rel), `${current}/${f.rel}`, x.signal, (n) =>
+            run.progress(f.rel, n)
           )
         )
         if (ok) {

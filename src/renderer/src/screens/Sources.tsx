@@ -72,7 +72,7 @@ export function Sources({
     <div>
       <PageHeader
         title="Sources"
-        description="Folders to back up. Each one has its own packaging, mode and schedule."
+        description="Folders and files to back up. Each source has its own packaging, mode and schedule."
         actions={
           <Button onClick={() => setEditing('new')}>
             <Plus /> Add source
@@ -100,7 +100,11 @@ export function Sources({
               <TableRow key={s.id}>
                 <TableCell className="max-w-0">
                   <div className="font-medium">{s.name}</div>
-                  <div className="text-muted-foreground truncate font-mono text-xs">{s.path}</div>
+                  <div className="text-muted-foreground truncate font-mono text-xs">
+                    {s.kind === 'files'
+                      ? `${s.files.length} ${s.files.length === 1 ? 'file' : 'files'}`
+                      : s.path}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">

@@ -130,6 +130,10 @@ if (!app.requestSingleInstanceLock()) {
 
     registerIpc(
       createHandlers(svc, {
+        pickFiles: async () => {
+          const r = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+          return r.canceled ? [] : r.filePaths
+        },
         pickFolder: async () => {
           const r = await dialog.showOpenDialog({
             properties: ['openDirectory', 'createDirectory']

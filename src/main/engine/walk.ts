@@ -26,6 +26,31 @@ export function buildMatcher(excludes: string[]): (rel: string, isDir: boolean) 
   return (rel, isDir) => rules.some((r) => (!r.dirOnly || isDir) && r.isMatch(rel))
 }
 
+/**
+ * Files sources: each path becomes an entry named by its file name. Paths that are missing,
+ * unreadable or not regular files are reported as unreadable, so their backups are protected.
+ */
+export async function statFiles(
+  paths: string[]
+): Promise<{ files: FileEntry[]; skipped: SkippedEntry[]; abs: Map<string, string> }> {
+  const files: FileEntry[] = []
+  const skipped: SkippedEntry[] = []
+  const abs = new Map<string, string>()
+  for (const p of paths) {
+    const rel = p.split(/[\\/]/).filter(Boolean).pop() ?? p
+    try {
+      const st = await stat(p)
+      if (!st.isFile()) throw new Error('not a file')
+      files.push({ rel, size: st.size, mtimeMs: st.mtimeMs })
+      abs.set(rel, p)
+    } catch {
+      skipped.push({ rel, reason: 'unreadable' })
+    }
+  }
+  files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
+  return { files, skipped, abs }
+}
+
 /** Recursively lists files under root (sorted by rel). Rejects if root itself cannot be read. */
 export async function walkTree(
   root: string,

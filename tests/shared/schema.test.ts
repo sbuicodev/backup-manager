@@ -327,3 +327,43 @@ describe('source-exclusive destinations', () => {
     expect(errorsOf(cfg).join('\n')).toMatch(/only for "A"/)
   })
 })
+
+describe('Files sources', () => {
+  const filesSource = (files: string[]): Source => ({
+    ...newSource('', 'Important', []),
+    kind: 'files',
+    files
+  })
+
+  test('sources are folders by default; an old source loads as a folder', () => {
+    expect(newSource('/a', 'A', [])).toMatchObject({ kind: 'folder', files: [] })
+    const old = defaultConfig() as unknown as { sources: Record<string, unknown>[] }
+    const { kind: _k, files: _f, ...legacy } = newSource('/a', 'A', [])
+    old.sources.push(legacy)
+    const r = validateConfig(old)
+    expect(r.ok && r.config.sources[0]).toMatchObject({ kind: 'folder', files: [] })
+  })
+
+  test('a Files source needs at least one absolute file and no folder path', () => {
+    expect(errorsOf(cfgWith((c) => c.sources.push(filesSource(['/x/tax.pdf']))))).toEqual([])
+    expect(errorsOf(cfgWith((c) => c.sources.push(filesSource([]))))).not.toEqual([])
+    expect(errorsOf(cfgWith((c) => c.sources.push(filesSource(['tax.pdf']))))).not.toEqual([])
+  })
+
+  test('two files with the same name (ignoring case) are rejected', () => {
+    const cfg = cfgWith((c) => c.sources.push(filesSource(['/a/config', '/b/CONFIG'])))
+    expect(errorsOf(cfg).join('\n')).toMatch(/same name.*config/i)
+  })
+
+  test('a file inside a destination is rejected', () => {
+    const cfg = cfgWith((c) => {
+      c.destinations.push(newDestination('/backup', 'B'))
+      c.sources.push(filesSource(['/backup/x.txt']))
+    })
+    expect(errorsOf(cfg).join('\n')).toMatch(/inside destination/)
+  })
+
+  test('a folder source still needs an absolute path', () => {
+    expect(errorsOf(cfgWith((c) => c.sources.push(newSource('rel', 'A', []))))).not.toEqual([])
+  })
+})

@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { FolderOpen, Pencil, Plus, Trash2 } from 'lucide-react'
+import { FilePlus, FolderOpen, Pencil, Plus, Trash2, X } from 'lucide-react'
 import {
   defaultModeFor,
+  fileName,
   newSource,
   slugify,
   validateConfig,
@@ -186,6 +187,18 @@ export function SourceEditor({
       ...(s.name ? {} : { name: base, ...(slugTouched ? {} : { slug: slugify(base, otherSlugs) }) })
     })
   }
+  const addFiles = async (): Promise<void> => {
+    const picked = (await api.dialog.pickFiles()).filter((f) => !s.files.includes(f))
+    if (picked.length === 0) return
+    const first = fileName(picked[0])
+    patch({
+      files: [...s.files, ...picked],
+      ...(s.name
+        ? {}
+        : { name: first, ...(slugTouched ? {} : { slug: slugify(first, otherSlugs) }) })
+    })
+  }
+  const files = s.kind === 'files'
   const setPackaging = (packaging: Source['packaging']): void =>
     patch(modeTouched ? { packaging } : { packaging, mode: defaultModeFor(packaging) })
 
@@ -220,7 +233,7 @@ export function SourceEditor({
       <SheetContent className="flex w-full flex-col gap-0 sm:max-w-xl">
         <SheetHeader className="border-b">
           <SheetTitle>{initial ? `Edit “${initial.name}”` : 'Add source'}</SheetTitle>
-          <SheetDescription>A folder to back up and how to store it.</SheetDescription>
+          <SheetDescription>What to back up and how to store it.</SheetDescription>
         </SheetHeader>
         <div className="grid flex-1 gap-6 overflow-y-auto p-4">
           {errors.length > 0 && (
@@ -231,15 +244,55 @@ export function SourceEditor({
             </div>
           )}
 
-          <Section title="Folder">
-            <Field label="Path">
-              <div className="flex gap-2">
-                <Input value={s.path} onChange={(e) => patch({ path: e.target.value })} />
-                <Button variant="outline" onClick={browse}>
-                  <FolderOpen /> Browse…
+          <Section title="What to back up">
+            <ChoiceButtons
+              value={s.kind}
+              onChange={(kind) => patch({ kind })}
+              options={[
+                { id: 'folder', label: 'Folder', hint: 'Everything inside one folder' },
+                { id: 'files', label: 'Files', hint: 'Hand-picked files from anywhere' }
+              ]}
+            />
+            {files ? (
+              <div className="grid min-w-0 gap-1 overflow-hidden">
+                {s.files.map((f) => (
+                  <div key={f} className="flex min-w-0 items-center gap-2 text-sm">
+                    <span className="font-medium">{fileName(f)}</span>
+                    <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
+                      {f}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remove ${fileName(f)}`}
+                      onClick={() => patch({ files: s.files.filter((x) => x !== f) })}
+                    >
+                      <X />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-self-start"
+                  onClick={addFiles}
+                >
+                  <FilePlus /> Add files…
                 </Button>
+                <p className="text-muted-foreground text-xs">
+                  Each file is stored by its name, so two files can&apos;t share a name.
+                </p>
               </div>
-            </Field>
+            ) : (
+              <Field label="Path">
+                <div className="flex gap-2">
+                  <Input value={s.path} onChange={(e) => patch({ path: e.target.value })} />
+                  <Button variant="outline" onClick={browse}>
+                    <FolderOpen /> Browse…
+                  </Button>
+                </div>
+              </Field>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Field label="Name">
                 <Input value={s.name} onChange={(e) => setName(e.target.value)} />
@@ -263,11 +316,15 @@ export function SourceEditor({
               onChange={setPackaging}
               options={[
                 { id: 'copy', label: 'Copy files', hint: 'Plain files, easy to browse' },
-                { id: 'zip-whole', label: 'One zip', hint: 'The whole folder in one archive' },
+                {
+                  id: 'zip-whole',
+                  label: 'One zip',
+                  hint: files ? 'All the files in one archive' : 'The whole folder in one archive'
+                },
                 {
                   id: 'zip-children',
                   label: 'Zip each item',
-                  hint: 'One archive per top-level folder/file'
+                  hint: files ? 'One archive per file' : 'One archive per top-level folder/file'
                 }
               ]}
             />
@@ -432,23 +489,25 @@ export function SourceEditor({
             )}
           </Section>
 
-          <Separator />
-          <Section title="Exclusions">
-            <Textarea
-              rows={3}
-              className="font-mono text-xs"
-              placeholder={'node_modules/\n*.tmp'}
-              value={excludes}
-              onChange={(e) => setExcludes(e.target.value)}
-            />
-            <label className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={s.useGlobalExcludes}
-                onCheckedChange={(useGlobalExcludes) => patch({ useGlobalExcludes })}
+          {!files && <Separator />}
+          {!files && (
+            <Section title="Exclusions">
+              <Textarea
+                rows={3}
+                className="font-mono text-xs"
+                placeholder={'node_modules/\n*.tmp'}
+                value={excludes}
+                onChange={(e) => setExcludes(e.target.value)}
               />
-              Also apply global exclusions ({config.globalExcludes.join(', ') || 'none'})
-            </label>
-          </Section>
+              <label className="flex items-center gap-2 text-sm">
+                <Switch
+                  checked={s.useGlobalExcludes}
+                  onCheckedChange={(useGlobalExcludes) => patch({ useGlobalExcludes })}
+                />
+                Also apply global exclusions ({config.globalExcludes.join(', ') || 'none'})
+              </label>
+            </Section>
+          )}
 
           <Separator />
           <Section title="Destinations">
@@ -630,7 +689,10 @@ export function SourceEditor({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={!s.path || !s.name.trim()}>
+          <Button
+            onClick={submit}
+            disabled={(files ? s.files.length === 0 : !s.path) || !s.name.trim()}
+          >
             Save
           </Button>
         </SheetFooter>

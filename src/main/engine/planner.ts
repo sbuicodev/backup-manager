@@ -9,7 +9,7 @@ import { FsDestination, type Destination } from './destination'
 import { effectiveExcludes, type JobContext, type PreparedJob } from './job'
 import { prepareMirrorCopy, prepareMirrorZip } from './mirror'
 import { prepareSnapshot } from './snapshot'
-import { walkTree } from './walk'
+import { statFiles, walkTree } from './walk'
 
 export type RunRequest = { sourceIds?: string[] } | { jobs: JobRequest[] }
 
@@ -83,16 +83,19 @@ export async function planRun(
 ): Promise<{ plan: Plan; prepared: PreparedEntry[] }> {
   const now = (deps.now ?? (() => new Date()))()
   const makeDestination = deps.makeDestination ?? ((root: string) => new FsDestination(root))
-  const walks = new Map<string, Promise<{ files: FileEntry[]; skipped: SkippedEntry[] } | null>>()
-  const walkSource = (
-    s: Source
-  ): Promise<{ files: FileEntry[]; skipped: SkippedEntry[] } | null> => {
+  type Walked = { files: FileEntry[]; skipped: SkippedEntry[]; abs?: Map<string, string> }
+  const walks = new Map<string, Promise<Walked | null>>()
+  const walkSource = (s: Source): Promise<Walked | null> => {
     let w = walks.get(s.id)
     if (!w) {
-      w = walkTree(s.path, {
-        excludes: effectiveExcludes(s, config.globalExcludes),
-        signal: deps.signal
-      }).catch(() => null)
+      w =
+        s.kind === 'files'
+          ? // A Files source with none of its files left is "missing", like a missing folder.
+            statFiles(s.files).then((r) => (r.files.length > 0 ? r : null))
+          : walkTree(s.path, {
+              excludes: effectiveExcludes(s, config.globalExcludes),
+              signal: deps.signal
+            }).catch(() => null)
       walks.set(s.id, w)
     }
     return w
@@ -120,7 +123,8 @@ export async function planRun(
       srcSkipped: walked.skipped,
       now,
       zip: effectiveZipSettings(source, d),
-      indexDir: deps.indexDir
+      indexDir: deps.indexDir,
+      ...(walked.abs ? { absOf: (rel: string) => walked.abs!.get(rel)! } : {})
     }
     try {
       const job =

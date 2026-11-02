@@ -10,6 +10,7 @@ import type {
   SkippedEntry,
   Warning
 } from '@shared/types'
+import { join } from 'node:path'
 import type { Destination } from './destination'
 import { JobAbort, classifyError } from './errors'
 
@@ -25,6 +26,13 @@ export type JobContext = {
   zip: EffectiveZip
   /** Folder of snapshot file-list indexes; when unset, snapshots record no change diff. */
   indexDir?: string
+  /** Absolute path of a source file; when unset, `rel` is under the source folder. */
+  absOf?: (rel: string) => string
+}
+
+/** Where a source file named `rel` lives on disk (folder sources and Files sources alike). */
+export function sourceAbs(ctx: JobContext, rel: string): string {
+  return ctx.absOf ? ctx.absOf(rel) : join(ctx.source.path, ...rel.split('/'))
 }
 export type ExecContext = {
   runId: string

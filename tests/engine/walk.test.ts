@@ -1,7 +1,7 @@
 import { chmod, mkdir, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { buildMatcher, walkTree } from '../../src/main/engine/walk'
+import { buildMatcher, statFiles, walkTree } from '../../src/main/engine/walk'
 import { makeTree, tmpDir } from '../helpers/fs'
 
 const posixOnly = process.platform === 'win32' ? test.skip : test
@@ -97,4 +97,24 @@ test('buildMatcher', () => {
   expect(m('a/node_modules', false)).toBe(false)
   expect(m('docs/private/x/y.txt', false)).toBe(true)
   expect(m('docs/public/y.txt', false)).toBe(false)
+})
+
+test('statFiles lists files by name; missing ones and folders are skipped as unreadable', async () => {
+  const root = await tmpDir()
+  await makeTree(root, { 'a/tax.pdf': 'tax', 'b/vault.kdbx': 'vault!', 'dir/x': '' })
+  const r = await statFiles([
+    join(root, 'a/tax.pdf'),
+    join(root, 'b/vault.kdbx'),
+    join(root, 'gone.txt'),
+    join(root, 'dir')
+  ])
+  expect(r.files.map((f) => [f.rel, f.size])).toEqual([
+    ['tax.pdf', 3],
+    ['vault.kdbx', 6]
+  ])
+  expect(r.skipped).toEqual([
+    { rel: 'gone.txt', reason: 'unreadable' },
+    { rel: 'dir', reason: 'unreadable' }
+  ])
+  expect(r.abs.get('vault.kdbx')).toBe(join(root, 'b/vault.kdbx'))
 })

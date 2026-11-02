@@ -1,10 +1,10 @@
-import { join } from 'node:path'
 import type { FileEntry, JobPlan } from '@shared/types'
 import { PARTIAL_SUFFIX } from './fsutil'
 import {
   JobRun,
   asJobAbort,
   caseConflicts,
+  sourceAbs,
   warnCaseConflict,
   type ExecContext,
   type JobContext,
@@ -68,7 +68,7 @@ export async function prepareSnapshot(ctx: JobContext): Promise<PreparedJob> {
         : null
       const name = uniqueTimestampName(formatTimestamp(ctx.now), taken)
       const partialDir = `${slug}/${name}${PARTIAL_SUFFIX}`
-      const absOf = (rel: string): string => join(source.path, ...rel.split('/'))
+      const absOf = (rel: string): string => sourceAbs(ctx, rel)
       // rel → archive file holding it (zip snapshots), for successfully written files only
       const written = new Map<string, { f: FileEntry; archive?: string }>()
 

@@ -1,7 +1,13 @@
-import { join } from 'node:path'
 import type { FileEntry } from '@shared/types'
 import { MANIFEST_NAME } from './destination'
-import { JobRun, asJobAbort, type ExecContext, type JobContext, type PreparedJob } from './job'
+import {
+  JobRun,
+  asJobAbort,
+  sourceAbs,
+  type ExecContext,
+  type JobContext,
+  type PreparedJob
+} from './job'
 import {
   MTIME_TOLERANCE_MS,
   basePlan,
@@ -234,7 +240,7 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
                 ctx.dest,
                 `${current}/${file}`,
                 pw.part.files.map((f) => ({
-                  absPath: join(ctx.source.path, ...f.rel.split('/')),
+                  absPath: sourceAbs(ctx, f.rel),
                   name: f.rel,
                   mtimeMs: f.mtimeMs
                 })),

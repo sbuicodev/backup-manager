@@ -30,6 +30,7 @@ async function setup(): Promise<{
   const files = { save: null as string | null, open: null as string | null }
   const handlers = createHandlers(services, {
     pickFolder: async () => '/picked',
+    pickFiles: async () => ['/picked/a.txt'],
     saveFile: async () => files.save,
     openFile: async () => files.open
   })
@@ -187,6 +188,7 @@ test('invalid config file on disk → config:get reports errors; reset restores 
   await services.start()
   const handlers = createHandlers(services, {
     pickFolder: async () => null,
+    pickFiles: async () => [],
     saveFile: async () => null,
     openFile: async () => null
   })
