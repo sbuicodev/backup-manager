@@ -32,6 +32,9 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  # Icon Composer file: on macOS 26+ the Dock draws it with liquid glass; build/icon.icns stays the
+  # fallback for older macOS. Compiling it needs Xcode 26's actool (see build:mac).
+  icon: build/icon.icon
   entitlementsInherit: build/entitlements.mac.plist
   category: public.app-category.utilities
   target:
