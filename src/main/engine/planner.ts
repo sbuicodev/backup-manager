@@ -27,6 +27,11 @@ export function jobKind(source: Source): JobKind {
   return `${source.mode}-${source.packaging === 'copy' ? 'copy' : 'zip'}`
 }
 
+/** Whether a backup may run at all: switched on and set up. */
+export function isRunnable(source: Source): boolean {
+  return source.enabled && source.setupComplete
+}
+
 /** Whether a source targets a destination (enabled or not): its own ones always, shared ones as chosen. */
 export function targets(source: Source, d: DestinationConfig): boolean {
   if (d.ownerSourceId !== null) return d.ownerSourceId === source.id
@@ -43,7 +48,7 @@ function selectPairs(config: Config, request: RunRequest): [Source, DestinationC
   if ('jobs' in request) {
     const wanted = new Set(request.jobs.map((j) => `${j.sourceId}:${j.destId}`))
     for (const s of config.sources) {
-      if (!s.enabled) continue
+      if (!isRunnable(s)) continue
       for (const d of config.destinations) {
         if (d.enabled && wanted.has(`${s.id}:${d.id}`)) pairs.push([s, d])
       }
@@ -51,7 +56,7 @@ function selectPairs(config: Config, request: RunRequest): [Source, DestinationC
     return pairs
   }
   for (const s of config.sources) {
-    if (!s.enabled || (request.sourceIds && !request.sourceIds.includes(s.id))) continue
+    if (!isRunnable(s) || (request.sourceIds && !request.sourceIds.includes(s.id))) continue
     for (const d of destinationsFor(config, s)) pairs.push([s, d])
   }
   return pairs

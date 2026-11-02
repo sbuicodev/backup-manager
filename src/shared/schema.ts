@@ -93,6 +93,8 @@ export const SourceSchema = z.preprocess(
      * mirror made before this change holds directly in the backup folder (moved down on its next run).
      */
     legacyFlatName: z.string().nullable().default(null),
+    /** False while the backup is saved but not finished ("Set up later"): it never runs. */
+    setupComplete: z.boolean().default(true),
     enabled: z.boolean(),
     mode: z.enum(['mirror', 'snapshot']),
     packaging: z.enum(['copy', 'zip-whole', 'zip-children']),
@@ -149,7 +151,7 @@ export const ConfigSchema = z
     cfg.sources.forEach((s, i) => {
       const issue = (message: string): void =>
         ctx.addIssue({ code: 'custom', path: ['sources', i, 'items'], message })
-      if (s.items.length === 0) issue('add at least one file or folder')
+      if (s.items.length === 0 && s.setupComplete) issue('add at least one file or folder')
       const seen = new Map<string, string>()
       for (const it of s.items) {
         const name = fileName(it.path)
@@ -277,6 +279,7 @@ export function newSource(path: string, name: string, existingSlugs: string[]): 
     slug: slugify(name, existingSlugs),
     items: path ? [{ path, kind: 'folder' }] : [],
     legacyFlatName: null,
+    setupComplete: true,
     enabled: true,
     mode: 'mirror',
     packaging: 'copy',

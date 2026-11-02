@@ -134,3 +134,13 @@ test('destinationsFor: own exclusive destinations always; others only shared one
   expect(destinationsFor(cfg, a).map((d) => d.name)).toEqual(['Shared', 'OwnA'])
   expect(destinationsFor(cfg, b).map((d) => d.name)).toEqual(['OwnB'])
 })
+
+test('a backup that is not set up is never planned, however it is asked for', async () => {
+  const { cfg, ids } = await world()
+  cfg.sources[0] = { ...cfg.sources[0], setupComplete: false }
+  const names = async (req: Parameters<typeof planRun>[1]): Promise<string[]> =>
+    pairs((await planRun(cfg, req)).plan, ids)
+  expect(await names({})).toEqual(['s2:d1'])
+  expect(await names({ sourceIds: [ids.s1] })).toEqual([])
+  expect(await names({ jobs: [{ sourceId: ids.s1, destId: ids.d1 }] })).toEqual([])
+})

@@ -443,3 +443,22 @@ test('glass is on by default; old settings, and the earlier level names, still l
   expect(glassOf(withGlass('liquid'))).toBe(true)
   expect(glassOf(withGlass('off'))).toBe(false)
 })
+
+describe('not set up', () => {
+  test('old configs load as set up', () => {
+    expect(newSource('/a', 'A', []).setupComplete).toBe(true)
+    const old = cfgWith((c) => c.sources.push(newSource('/a', 'A', []))) as unknown as {
+      sources: Record<string, unknown>[]
+    }
+    delete old.sources[0].setupComplete
+    const r = validateConfig(old)
+    expect(r.ok && r.config.sources[0].setupComplete).toBe(true)
+  })
+  test('a backup that is not set up may have no items; a set-up one may not', () => {
+    const draft = { ...newSource('', 'Draft', []), setupComplete: false }
+    expect(errorsOf(cfgWith((c) => c.sources.push(draft)))).toEqual([])
+    expect(errorsOf(cfgWith((c) => c.sources.push({ ...draft, setupComplete: true })))).not.toEqual(
+      []
+    )
+  })
+})

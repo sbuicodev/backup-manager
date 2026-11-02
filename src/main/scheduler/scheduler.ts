@@ -1,6 +1,6 @@
 import type { Config, Source } from '@shared/schema'
 import type { JobRequest, JobResult, QueuedRun, RunLog, SchedulerStatus } from '@shared/types'
-import { destinationsFor } from '../engine/planner'
+import { destinationsFor, isRunnable } from '../engine/planner'
 import { RunQueue } from './queue'
 import { clampLast, isDue, nextRunAt } from './schedule'
 import {
@@ -102,7 +102,7 @@ export class Scheduler {
   runNow(sourceIds?: string[]): QueuedRun | null {
     const config = this.deps.getConfig()
     const jobs = config.sources
-      .filter((s) => s.enabled && (!sourceIds || sourceIds.includes(s.id)))
+      .filter((s) => isRunnable(s) && (!sourceIds || sourceIds.includes(s.id)))
       .flatMap((s) => this.jobsFor(config, s))
     return this.queue.enqueue(jobs, 'manual')
   }
@@ -132,7 +132,7 @@ export class Scheduler {
       pending: [...this.queue.pending],
       pausedUntil: this.state.pausedUntil,
       nextRuns: config.sources.map((s) => {
-        if (!s.enabled || !s.schedule) return { sourceId: s.id, at: null }
+        if (!isRunnable(s) || !s.schedule) return { sourceId: s.id, at: null }
         const last = this.lastScheduled(s.id) ?? now
         return { sourceId: s.id, at: nextRunAt(s.schedule, last, now).toISOString() }
       }),
@@ -204,7 +204,7 @@ export class Scheduler {
     const due: JobRequest[] = []
     let allLate = true
     for (const source of config.sources) {
-      if (!source.enabled || !source.schedule) continue
+      if (!isRunnable(source) || !source.schedule) continue
       const stored = this.lastScheduled(source.id)
       if (!stored) {
         this.state.sources[source.id] = { lastScheduledAt: now.toISOString() }
@@ -321,7 +321,7 @@ export class Scheduler {
 /** Whether a pending retry can still run: its source and destination exist and allow it. */
 function retryEnabled(config: Config, j: JobRequest): boolean {
   const source = config.sources.find((s) => s.id === j.sourceId)
-  if (!source?.enabled || !source.retryWhenAvailable) return false
+  if (!source || !isRunnable(source) || !source.retryWhenAvailable) return false
   return destinationsFor(config, source).some((d) => d.id === j.destId)
 }
 

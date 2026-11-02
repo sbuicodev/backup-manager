@@ -528,3 +528,25 @@ test('a retry check that moves the next check time notifies status listeners', a
   await h.advance(MIN) // check at +1 → next check moves to +3
   expect(calls).toBeGreaterThan(0)
 })
+
+describe('not set up', () => {
+  test('a due schedule does not enqueue it and Run all skips it', async () => {
+    const h = await harness([daily('11:00'), daily('11:00')])
+    h.cfg.sources[0] = { ...h.cfg.sources[0], setupComplete: false }
+    await h.s.start()
+    await h.advance(60 * MIN)
+    expect(h.runs.flatMap((r) => r.jobs.map((j) => j.sourceId))).toEqual(['s1'])
+    expect(h.s.runNow()?.jobs.map((j) => j.sourceId)).toEqual(['s1'])
+  })
+  test('a leftover pending retry is neither checked nor listed', async () => {
+    const h = await harness([daily('11:00')])
+    h.outcome('s0:d0', { status: 'skipped', reason: 'destination-missing' })
+    await h.s.start()
+    await h.advance(60 * MIN)
+    h.cfg.sources[0] = { ...h.cfg.sources[0], setupComplete: false }
+    h.checks.length = 0
+    await h.advance(5 * MIN)
+    expect(h.checks).toEqual([])
+    expect(h.s.status().pendingRetries).toEqual([])
+  })
+})
