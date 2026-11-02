@@ -90,6 +90,19 @@ function createWindow(): void {
     }
   })
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+  // The page blocks unloading while a backup has unsaved edits (quitting); ask before losing them.
+  mainWindow.webContents.on('will-prevent-unload', (e) => {
+    const choice = dialog.showMessageBoxSync(mainWindow!, {
+      type: 'question',
+      buttons: ['Discard changes', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: 'You have unsaved changes',
+      detail: 'Quitting now discards the changes you made to this backup.'
+    })
+    if (choice === 0) e.preventDefault()
+    else quitting = false // staying: closing the window hides it again, as usual
+  })
   mainWindow.on('close', (e) => {
     if (quitting) return
     e.preventDefault()

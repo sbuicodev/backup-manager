@@ -25,6 +25,8 @@ import {
 } from '@/lib/summary'
 import { fileName } from '@shared/schema'
 import { cn } from '@/lib/utils'
+import { BackupForm } from '@/components/BackupForm'
+import type { Draft } from '@/lib/backup-draft'
 
 const TONE_DOT: Record<Tone, string> = {
   ok: 'bg-emerald-500',
@@ -243,6 +245,47 @@ export function BackupPage({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** A backup's page while editing: every setting, saved only by Save. */
+export function BackupEditPage({
+  config,
+  draft,
+  onChange,
+  dirty,
+  errors,
+  onSave,
+  onCancel
+}: {
+  config: Config
+  draft: Draft
+  onChange: (d: Draft) => void
+  dirty: boolean
+  errors: Record<string, string>
+  onSave: () => void
+  onCancel: () => void
+}): React.JSX.Element {
+  return (
+    <div className="grid gap-6 pb-20">
+      <header className="flex items-baseline justify-between gap-4">
+        <h1 className="truncate text-xl font-semibold">
+          {draft.source.name.trim() || 'New backup'}
+        </h1>
+        {dirty && (
+          <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <span className="size-1.5 rounded-full bg-amber-500" /> Unsaved changes
+          </span>
+        )}
+      </header>
+      <BackupForm config={config} draft={draft} onChange={onChange} errors={errors} />
+      <div className="bg-background/90 sticky bottom-0 -mx-1 flex justify-end gap-2 border-t px-1 py-3 backdrop-blur">
+        <Button variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button onClick={onSave}>Save</Button>
+      </div>
     </div>
   )
 }

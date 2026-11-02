@@ -26,9 +26,19 @@ import { cn } from '@/lib/utils'
 import { useRunProgress } from '@/hooks/useRunProgress'
 import { Destinations } from '@/screens/Destinations'
 import { History } from '@/screens/History'
-import { BackupPage } from '@/screens/BackupPage'
+import { BackupEditPage, BackupPage } from '@/screens/BackupPage'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
+import { buildNextConfig, draftFrom, errorsByGroup, isDirty, type Draft } from '@/lib/backup-draft'
 import { Settings } from '@/screens/Settings'
-import { SourceEditor } from '@/screens/SourceEditor'
 import { Sources } from '@/screens/Sources'
 
 /** Back up now, or Stop while a run is active; hovering previews what a run would do. */
@@ -234,8 +244,22 @@ function App(): React.JSX.Element {
   const availability = useAvailability()
   const [picked, setPicked] = useState<Selection | null>(null)
   const [runId, setRunId] = useState<string | undefined>()
-  // Until editing moves onto the page (Task 6), Edit opens the previous editor sheet.
-  const [editing, setEditing] = useState<string | null>(null)
+  // The backup being edited, if any; nothing is saved until Save.
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [pendingSel, setPendingSel] = useState<Selection | null>(null)
+  const configNow = cfg.state?.ok ? cfg.state.config : null
+  const dirty = draft !== null && configNow !== null && isDirty(configNow, draft)
+  useEffect(() => {
+    if (!dirty) return
+    // Quitting with unsaved edits: main shows a Discard / Cancel prompt.
+    const guard = (e: BeforeUnloadEvent): void => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [dirty])
   const [collapsed, toggleSidebar] = useSidebarCollapsed()
   const glass = cfg.state?.ok ? cfg.state.config.settings.glass : false
   useGlassClasses(glass)
@@ -246,6 +270,7 @@ function App(): React.JSX.Element {
       api.app.onNavigate((s, arg) => {
         setPicked(s === 'settings' ? { kind: 'settings' } : { kind: 'activity' })
         setRunId(s === 'history' ? arg : undefined)
+        setDraft(null)
       }),
     []
   )
@@ -257,9 +282,29 @@ function App(): React.JSX.Element {
   }
   const config = cfg.state.config
   const selection = resolveSelection(picked, config)
-  const select = (s: Selection): void => {
+  const go = (s: Selection): void => {
+    setDraft(null)
+    setFormErrors({})
     setPicked(s)
     setRunId(undefined)
+  }
+  // Leaving a backup with unsaved edits asks first.
+  const select = (s: Selection): void => (dirty ? setPendingSel(s) : go(s))
+  const saveDraft = async (): Promise<boolean> => {
+    if (!draft) return true
+    const r = buildNextConfig(config, draft)
+    if ('error' in r) {
+      setFormErrors(errorsByGroup([r.error]))
+      return false
+    }
+    const errors = await cfg.save(r.next)
+    if (errors) {
+      setFormErrors(errorsByGroup(errors))
+      return false
+    }
+    setDraft(null)
+    setFormErrors({})
+    return true
   }
   const runningSourceId = status?.active ? (progress.currentJob?.sourceId ?? null) : null
 
@@ -287,7 +332,21 @@ function App(): React.JSX.Element {
               <div className="mx-auto w-full max-w-5xl">
                 {selection.kind === 'empty' && <EmptyState onNew={() => select({ kind: 'new' })} />}
                 {/* Until their new pages land, these show the previous screens. */}
-                {selection.kind === 'backup' && (
+                {selection.kind === 'backup' && draft?.source.id === selection.id && (
+                  <BackupEditPage
+                    config={config}
+                    draft={draft}
+                    onChange={setDraft}
+                    dirty={dirty}
+                    errors={formErrors}
+                    onSave={() => void saveDraft()}
+                    onCancel={() => {
+                      setDraft(null)
+                      setFormErrors({})
+                    }}
+                  />
+                )}
+                {selection.kind === 'backup' && draft?.source.id !== selection.id && (
                   <BackupPage
                     config={config}
                     source={config.sources.find((x) => x.id === selection.id)!}
@@ -296,9 +355,16 @@ function App(): React.JSX.Element {
                     availability={availability}
                     progress={progress}
                     running={runningSourceId === selection.id}
-                    onEdit={() => setEditing(selection.id)}
+                    onEdit={() =>
+                      setDraft(
+                        draftFrom(
+                          config,
+                          config.sources.find((x) => x.id === selection.id)!
+                        )
+                      )
+                    }
                     onOpenRun={(id) => {
-                      setPicked({ kind: 'activity' })
+                      go({ kind: 'activity' })
                       setRunId(id)
                     }}
                   />
@@ -321,14 +387,38 @@ function App(): React.JSX.Element {
           </main>
         </div>
       </div>
-      {editing && config.sources.some((x) => x.id === editing) && (
-        <SourceEditor
-          config={config}
-          initial={config.sources.find((x) => x.id === editing)!}
-          onSave={cfg.save}
-          onClose={() => setEditing(null)}
-        />
-      )}
+      <AlertDialog open={pendingSel !== null} onOpenChange={(o) => !o && setPendingSel(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save your changes to “{draft?.source.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              If you don’t save, your changes will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const s = pendingSel
+                setPendingSel(null)
+                if (s) go(s)
+              }}
+            >
+              Don’t save
+            </Button>
+            <AlertDialogAction
+              onClick={() => {
+                const s = pendingSel
+                setPendingSel(null)
+                void saveDraft().then((ok) => ok && s && go(s))
+              }}
+            >
+              Save
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Toaster position="bottom-right" />
     </TooltipProvider>
   )
