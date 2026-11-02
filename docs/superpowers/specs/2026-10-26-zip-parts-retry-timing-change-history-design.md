@@ -105,7 +105,7 @@ even for incompressible data; well-compressing data simply produces smaller part
 
 ### 3.3 Mirror mode: stable part assignment
 
-The mirror manifest `D/S/current/.backup-manager.json` moves to version 2:
+The mirror manifest `D/S/.backup-manager.json` moves to version 2:
 
 ```ts
 type ManifestV2 = {

@@ -115,8 +115,8 @@ describe('mirror-copy', () => {
     })
     const r = await prepared.execute(exec())
     expect(r).toMatchObject({ status: 'completed', counts: { copied: 2 }, bytesWritten: 3 })
-    expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'a', 'S/current/d/b.txt': 'bb' })
-    expect((await stat(join(root, 'S/current/a.txt'))).mtimeMs).toBe(mtime.getTime())
+    expect(await readTree(root)).toEqual({ 'S/a.txt': 'a', 'S/d/b.txt': 'bb' })
+    expect((await stat(join(root, 'S/a.txt'))).mtimeMs).toBe(mtime.getTime())
     expect(src).toBeTruthy()
   })
 
@@ -133,7 +133,7 @@ describe('mirror-copy', () => {
     await writeFile(join(src, 'a.txt'), 'changed!')
     const r = await run(source, dest)
     expect(r.counts.updated).toBe(1)
-    expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'changed!' })
+    expect(await readTree(root)).toEqual({ 'S/a.txt': 'changed!' })
   })
 
   test('trash policy moves deleted files under .trash/<TS>/ keeping rel path', async () => {
@@ -143,7 +143,7 @@ describe('mirror-copy', () => {
     const r = await run(source, dest)
     expect(r.counts.trashed).toBe(1)
     expect(await readTree(root)).toEqual({
-      'S/current/a.txt': 'a',
+      'S/a.txt': 'a',
       [`S/.trash/${TS}/d/b.txt`]: 'b'
     })
   })
@@ -155,8 +155,8 @@ describe('mirror-copy', () => {
     await rm(join(src, 'd'), { recursive: true })
     const r = await run(source, dest)
     expect(r.counts.deleted).toBe(1)
-    expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'a' })
-    expect(await dest.stat('S/current/d')).toBeNull()
+    expect(await readTree(root)).toEqual({ 'S/a.txt': 'a' })
+    expect(await dest.stat('S/d')).toBeNull()
   })
 
   test('never policy keeps deleted files', async () => {
@@ -165,16 +165,16 @@ describe('mirror-copy', () => {
     await run(source, dest)
     await rm(join(src, 'd'), { recursive: true })
     await run(source, dest)
-    expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'a', 'S/current/d/b.txt': 'b' })
+    expect(await readTree(root)).toEqual({ 'S/a.txt': 'a', 'S/d/b.txt': 'b' })
   })
 
   test('excluded file at destination is left untouched', async () => {
     const { source, dest, root } = await setup({ 'a.txt': 'a' })
     source.excludes = ['*.tmp']
-    await makeTree(root, { 'S/current/x.tmp': 'keep me' })
+    await makeTree(root, { 'S/x.tmp': 'keep me' })
     source.mirror.deletion = 'exact'
     await run(source, dest)
-    expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'a', 'S/current/x.tmp': 'keep me' })
+    expect(await readTree(root)).toEqual({ 'S/a.txt': 'a', 'S/x.tmp': 'keep me' })
   })
 
   test('case-only rename keeps the renamed file', async () => {
@@ -185,9 +185,9 @@ describe('mirror-copy', () => {
     await makeTree(src, { 'foo.txt': 'v2', 'dir/x.txt': 'x' })
     await run(source, dest)
     const tree = await readTree(root)
-    expect(tree['S/current/foo.txt']).toBe('v2')
-    expect(tree['S/current/dir/x.txt']).toBe('x')
-    expect(tree['S/current/Foo.txt']).toBeUndefined()
+    expect(tree['S/foo.txt']).toBe('v2')
+    expect(tree['S/dir/x.txt']).toBe('x')
+    expect(tree['S/Foo.txt']).toBeUndefined()
   })
 
   test('source file deleted between prepare and execute → warning, completed-with-warnings', async () => {
@@ -208,14 +208,14 @@ describe('mirror-copy', () => {
     await writeFile(join(src, 'a.txt'), 'much longer content now')
     const r = await prepared.execute(exec())
     expect(r.status).toBe('completed')
-    expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'much longer content now' })
+    expect(await readTree(root)).toEqual({ 'S/a.txt': 'much longer content now' })
   })
 
   test('stale .partial from a crash is removed at job start', async () => {
     const { source, dest, root } = await setup({ 'a.txt': 'a' })
-    await makeTree(root, { 'S/current/sub/.0a1b2c3d4e5f.bm-partial': 'junk' })
+    await makeTree(root, { 'S/sub/.0a1b2c3d4e5f.bm-partial': 'junk' })
     await run(source, dest)
-    expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'a' })
+    expect(await readTree(root)).toEqual({ 'S/a.txt': 'a' })
   })
 
   test('symlinks and unreadable entries become warnings', async () => {
@@ -249,7 +249,7 @@ describe('awkward file names', () => {
   test('user files named *.partial are mirrored once and not re-copied', async () => {
     const { source, dest, root } = await setup({ 'a.partial': 'mine', 'b.txt': 'b' })
     await run(source, dest)
-    expect((await readTree(root))['S/current/a.partial']).toBe('mine')
+    expect((await readTree(root))['S/a.partial']).toBe('mine')
     const r = await run(source, dest)
     expect(r.counts.copied + r.counts.updated).toBe(0)
   })
@@ -259,10 +259,7 @@ describe('awkward file names', () => {
     const { source, dest, root } = await setup({ [long]: 'x', 'z.txt': 'z' })
     const r = await run(source, dest)
     expect(r.status).toBe('completed')
-    expect(Object.keys(await readTree(root)).sort()).toEqual([
-      `S/current/${long}`,
-      'S/current/z.txt'
-    ])
+    expect(Object.keys(await readTree(root)).sort()).toEqual([`S/${long}`, 'S/z.txt'])
   })
 })
 
@@ -273,12 +270,8 @@ describe('mirror-zip', () => {
     const r = await run(source, dest)
     expect(r).toMatchObject({ status: 'completed', counts: { zipped: 2 } })
     const tree = await readTree(root)
-    expect(Object.keys(tree).sort()).toEqual([
-      'S/current/.backup-manager.json',
-      'S/current/A.zip',
-      'S/current/B.zip'
-    ])
-    expect(JSON.parse(tree['S/current/.backup-manager.json'])).toMatchObject({ version: 2 })
+    expect(Object.keys(tree).sort()).toEqual(['S/.backup-manager.json', 'S/A.zip', 'S/B.zip'])
+    expect(JSON.parse(tree['S/.backup-manager.json'])).toMatchObject({ version: 2 })
   })
 
   test('only archives whose fingerprint changed are rewritten', async () => {
@@ -287,15 +280,15 @@ describe('mirror-zip', () => {
     await run(source, dest)
     const old = new Date(2020, 0, 1)
     const { utimes } = await import('node:fs/promises')
-    await utimes(join(root, 'S/current/A.zip'), old, old)
-    await utimes(join(root, 'S/current/B.zip'), old, old)
+    await utimes(join(root, 'S/A.zip'), old, old)
+    await utimes(join(root, 'S/B.zip'), old, old)
     await writeFile(join(src, 'B/y.txt'), 'changed')
     const prepared = await prepareMirrorZip(await ctxFor(source, dest))
     expect(prepared.plan.counts).toMatchObject({ zip: 1, unchanged: 1 })
     const r = await prepared.execute(exec())
     expect(r.counts.zipped).toBe(1)
-    expect((await stat(join(root, 'S/current/A.zip'))).mtimeMs).toBe(old.getTime())
-    expect((await stat(join(root, 'S/current/B.zip'))).mtimeMs).not.toBe(old.getTime())
+    expect((await stat(join(root, 'S/A.zip'))).mtimeMs).toBe(old.getTime())
+    expect((await stat(join(root, 'S/B.zip'))).mtimeMs).not.toBe(old.getTime())
   })
 
   test('removed child follows deletion policy and manifest is updated', async () => {
@@ -307,18 +300,18 @@ describe('mirror-zip', () => {
     expect(r.counts.trashed).toBe(1)
     const tree = await readTree(root)
     expect(Object.keys(tree).sort()).toEqual([
+      'S/.backup-manager.json',
       'S/.trash/' + TS + '/B.zip',
-      'S/current/.backup-manager.json',
-      'S/current/A.zip'
+      'S/A.zip'
     ])
-    expect(Object.keys(JSON.parse(tree['S/current/.backup-manager.json']).archives)).toEqual(['A'])
+    expect(Object.keys(JSON.parse(tree['S/.backup-manager.json']).archives)).toEqual(['A'])
   })
 
   test('missing archive is rewritten even if manifest matches', async () => {
     const { source, dest, root } = await setup({ 'A/x.txt': 'x' })
     source.packaging = 'zip-whole'
     await run(source, dest)
-    await rm(join(root, 'S/current/S.zip'))
+    await rm(join(root, 'S/S.zip'))
     const r = await run(source, dest)
     expect(r.counts.zipped).toBe(1)
   })
@@ -340,8 +333,8 @@ describe('unreadable source entries never cost backup data', () => {
           expect(r.counts.deleted + r.counts.trashed).toBe(0)
           expect(r.warnings.map((w) => w.path)).toContain('sub')
           expect(await readTree(root)).toEqual({
-            'S/current/a.txt': 'a',
-            'S/current/sub/keep.txt': 'k'
+            'S/a.txt': 'a',
+            'S/sub/keep.txt': 'k'
           })
         } finally {
           await chmod(join(src, 'sub'), 0o755)
@@ -358,13 +351,13 @@ describe('unreadable source entries never cost backup data', () => {
     })
     source.packaging = 'zip-children'
     await run(source, dest)
-    const before = await readFile(join(root, 'S/current/A.zip'))
+    const before = await readFile(join(root, 'S/A.zip'))
     await chmod(join(src, 'A/sub'), 0o000)
     try {
       const r = await run(source, dest)
       expect(r.counts.zipped).toBe(0)
       expect(r.warnings.some((w) => w.path === 'A.zip')).toBe(true)
-      expect((await readFile(join(root, 'S/current/A.zip'))).equals(before)).toBe(true)
+      expect((await readFile(join(root, 'S/A.zip'))).equals(before)).toBe(true)
     } finally {
       await chmod(join(src, 'A/sub'), 0o755)
     }
@@ -381,7 +374,7 @@ describe('unreadable source entries never cost backup data', () => {
       try {
         const r = await run(source, dest)
         expect(r.counts.deleted).toBe(0)
-        expect(Object.keys(await readTree(root))).toContain('S/current/B.zip')
+        expect(Object.keys(await readTree(root))).toContain('S/B.zip')
       } finally {
         await chmod(join(src, 'B'), 0o755)
       }
@@ -398,7 +391,7 @@ describe('per-file errors do not abort the job', () => {
       const r = await run(source, dest)
       expect(r.status).toBe('completed-with-warnings')
       expect(r.warnings).toEqual([expect.objectContaining({ path: 'a.txt', code })])
-      expect(await readTree(root)).toEqual({ 'S/current/b.txt': 'b' })
+      expect(await readTree(root)).toEqual({ 'S/b.txt': 'b' })
     }
   )
 
@@ -448,7 +441,7 @@ describe('a source that suddenly looks empty', () => {
     const r = await run(source, dest)
     expect(r.counts.deleted).toBe(0)
     expect(r.warnings).toEqual([expect.objectContaining({ code: 'EMPTY_SOURCE' })])
-    expect(await readTree(root)).toEqual({ 'S/current/a.txt': 'a', 'S/current/d/b.txt': 'b' })
+    expect(await readTree(root)).toEqual({ 'S/a.txt': 'a', 'S/d/b.txt': 'b' })
   })
 
   test('mirror-zip (exact) keeps its archives and warns', async () => {
@@ -460,18 +453,18 @@ describe('a source that suddenly looks empty', () => {
     const r = await run(source, dest)
     expect(r.counts.deleted).toBe(0)
     expect(r.warnings).toEqual([expect.objectContaining({ code: 'EMPTY_SOURCE' })])
-    expect(Object.keys(await readTree(root))).toContain('S/current/A.zip')
+    expect(Object.keys(await readTree(root))).toContain('S/A.zip')
   })
 
   test('mirror zip-whole does not replace the archive with an empty one', async () => {
     const { src, source, dest, root } = await setup({ 'A/x.txt': 'x' })
     source.packaging = 'zip-whole'
     await run(source, dest)
-    const before = await readFile(join(root, 'S/current/S.zip'))
+    const before = await readFile(join(root, 'S/S.zip'))
     await rm(join(src, 'A'), { recursive: true })
     const r = await run(source, dest)
     expect(r.counts.zipped).toBe(0)
-    expect((await readFile(join(root, 'S/current/S.zip'))).equals(before)).toBe(true)
+    expect((await readFile(join(root, 'S/S.zip'))).equals(before)).toBe(true)
   })
 })
 

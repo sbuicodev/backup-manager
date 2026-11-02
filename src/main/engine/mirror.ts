@@ -15,10 +15,15 @@ import {
   basePlan,
   isAtOrUnder,
   looksUnmounted,
+  mirrorReadRoot,
+  mirrorSkipTop,
   removalCounts,
   removeByPolicy,
+  reservedSourceFiles,
+  settleLayout,
   unreadableRels,
-  warnEmptySource
+  warnEmptySource,
+  warnReserved
 } from './mirror-shared'
 
 export { prepareMirrorZip } from './mirror-zip'
@@ -52,10 +57,16 @@ export function diffMirror(
 
 export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
   const { slug } = ctx.source
-  const current = `${slug}/current`
-  const dst = await ctx.dest.walk(current, effectiveExcludes(ctx.source, ctx.globalExcludes))
+  const { read, legacy } = await mirrorReadRoot(ctx)
+  const dst = await ctx.dest.walk(
+    read,
+    effectiveExcludes(ctx.source, ctx.globalExcludes),
+    mirrorSkipTop(ctx)
+  )
+  const reserved = reservedSourceFiles(ctx.srcFiles)
+  const srcFiles = ctx.srcFiles.filter((f) => !reserved.has(f.rel))
   const emptySource = looksUnmounted(ctx, dst.length > 0)
-  const diff = diffMirror(ctx.srcFiles, dst, unreadableRels(ctx))
+  const diff = diffMirror(srcFiles, dst, unreadableRels(ctx))
   if (emptySource) diff.remove = []
   const plan = basePlan(ctx, 'mirror-copy')
   plan.counts = {
@@ -71,21 +82,21 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
     asJobAbort(ctx.dest, async () => {
       const run = new JobRun(ctx, x, plan.bytes)
       if (emptySource) warnEmptySource(run)
-      await ctx.dest.removePartials(slug, false)
-      await ctx.dest.removePartials(current, true)
-      await ctx.dest.mkdirp(current)
+      warnReserved(run, ctx.srcFiles)
+      await settleLayout(ctx, legacy)
+      await ctx.dest.removePartials(slug, true)
       // Removals first: on case-insensitive filesystems a case-only rename must not
       // have its freshly copied file trashed afterwards.
       for (const rel of diff.remove) {
         await removeByPolicy(ctx, run, rel)
         await run.settle()
       }
-      if (ctx.source.mirror.deletion !== 'never') await ctx.dest.removeEmptyDirs(current)
-      const conflicts = await caseConflicts(ctx.dest, current, ctx.srcFiles)
+      if (ctx.source.mirror.deletion !== 'never') await ctx.dest.removeEmptyDirs(slug)
+      const conflicts = await caseConflicts(ctx.dest, slug, srcFiles)
       const copyOne = async (f: FileEntry, isUpdate: boolean): Promise<void> => {
         if (conflicts.has(f.rel)) return warnCaseConflict(run, f.rel)
         const ok = await run.guard(f.rel, () =>
-          ctx.dest.copyFileIn(sourceAbs(ctx, f.rel), `${current}/${f.rel}`, x.signal, (n) =>
+          ctx.dest.copyFileIn(sourceAbs(ctx, f.rel), `${slug}/${f.rel}`, x.signal, (n) =>
             run.progress(f.rel, n)
           )
         )

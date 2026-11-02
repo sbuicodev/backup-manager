@@ -21,7 +21,7 @@ export interface Destination {
   isAvailable(): Promise<boolean>
   stat(rel: string): Promise<{ size: number; mtimeMs: number; isDir: boolean } | null>
   list(rel: string): Promise<{ name: string; isDir: boolean }[]>
-  walk(rel: string, excludes: string[]): Promise<FileEntry[]>
+  walk(rel: string, excludes: string[], skipTop?: (name: string) => boolean): Promise<FileEntry[]>
   mkdirp(rel: string): Promise<void>
   copyFileIn(
     absSrc: string,
@@ -86,10 +86,15 @@ export class FsDestination implements Destination {
     }
   }
 
-  async walk(rel: string, excludes: string[]): Promise<FileEntry[]> {
+  async walk(
+    rel: string,
+    excludes: string[],
+    skipTop?: (name: string) => boolean
+  ): Promise<FileEntry[]> {
     try {
       const { files } = await walkTree(this.abs(rel), {
         excludes,
+        skipTop,
         skipNames: (n) => isPartialName(n) || n === MANIFEST_NAME
       })
       return files

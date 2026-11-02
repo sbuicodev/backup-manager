@@ -14,6 +14,9 @@ import {
   looksUnmounted,
   removalCounts,
   removeByPolicy,
+  mirrorReadRoot,
+  mirrorSkipTop,
+  settleLayout,
   unreadableRels,
   warnEmptySource
 } from './mirror-shared'
@@ -31,7 +34,7 @@ import { splitIntoChunks, writeZip } from './packaging/zip'
 
 type ManifestV2 = { version: 2; archives: Record<string, ManifestArchive> }
 
-/** Archive files in `current/`: B.zip, B.partN.zip and their .NNN chunks. */
+/** Archive files in the mirror folder: B.zip, B.partN.zip and their .NNN chunks. */
 const ARCHIVE_FILE = /\.zip(\.\d{3,})?$/
 
 async function readManifest(ctx: JobContext, rel: string): Promise<ManifestV2> {
@@ -75,11 +78,14 @@ type ArchiveWork = { target: ZipTarget; prev?: ManifestArchive; parts: PartWork[
 
 export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
   const { slug } = ctx.source
-  const current = `${slug}/current`
-  const manifestRel = `${current}/${MANIFEST_NAME}`
+  // Planning reads from where the archives are now (old backups: <slug>/current/); a run moves
+  // them up into <slug>/ first, so every name below stays valid.
+  const { read, legacy } = await mirrorReadRoot(ctx)
+  const current = slug
+  const manifestRel = `${slug}/${MANIFEST_NAME}`
   const level = ctx.source.zip.level
   const targets = computeZipTargets(ctx.source, ctx.srcFiles)
-  const manifest = await readManifest(ctx, manifestRel)
+  const manifest = await readManifest(ctx, `${read}/${MANIFEST_NAME}`)
 
   // Archives with members the walk could not read keep their previous state (all parts).
   const unreadableTops = new Set(unreadableRels(ctx).map((r) => r.split('/')[0]))
@@ -94,9 +100,12 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
       // Conservative: an unreadable top-level entry may be a loose file in the bundle.
       (isBundle && unreadableTopLevel && stem(base) === '_files'))
 
-  const existing = (await ctx.dest.list(current))
+  const skipTop = mirrorSkipTop(ctx)
+  const existing = (await ctx.dest.list(read))
     .filter((e) => !e.isDir && ARCHIVE_FILE.test(e.name))
     .map((e) => e.name)
+    // Snapshot zips from an earlier snapshot mode share the folder: never ours unless produced.
+    .filter((n) => !skipTop(n) || targets.some((t) => ownsFile(t.base, n)))
   const emptySource = looksUnmounted(ctx, existing.length > 0)
 
   const partFingerprint = (p: PartPlan): string =>
@@ -175,8 +184,8 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
     asJobAbort(ctx.dest, async () => {
       const run = new JobRun(ctx, x, plan.bytes)
       await ctx.dest.removePartials(slug, false)
+      await settleLayout(ctx, legacy)
       await ctx.dest.removePartials(current, true)
-      await ctx.dest.mkdirp(current)
       if (emptySource) warnEmptySource(run)
       const archives: Record<string, ManifestArchive> = {}
       for (const base of kept) {

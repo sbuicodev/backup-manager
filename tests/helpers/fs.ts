@@ -27,12 +27,15 @@ export async function makeTree(root: string, spec: TreeSpec): Promise<void> {
   }
 }
 
-/** Reads all files under root into { posixRel: content }. */
+/**
+ * Reads all files under root into { posixRel: content }. The mirror's layout marker is
+ * bookkeeping, not backed-up content, so it is left out.
+ */
 export async function readTree(root: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   const entries = await readdir(root, { recursive: true, withFileTypes: true })
   for (const e of entries) {
-    if (!e.isFile()) continue
+    if (!e.isFile() || e.name === '.backup-manager-layout') continue
     const abs = join(e.parentPath, e.name)
     out[relative(root, abs).split('\\').join('/')] = await readFile(abs, 'utf8')
   }

@@ -42,13 +42,16 @@ async function world(extra: Partial<Source> = {}) {
 test('mirror copy stores each file by name; removing one from the list trashes it', async () => {
   const w = await world()
   expect((await w.run('r1')).status).toBe('completed')
-  expect(await readTree(join(w.dest, 'current'))).toEqual({
+  expect(await readTree(w.dest)).toEqual({
     'tax.pdf': 'tax',
     'vault.kdbx': 'vault'
   })
   w.cfg.sources[0].files = [w.cfg.sources[0].files[1]]
   await w.run('r2')
-  expect(Object.keys(await readTree(join(w.dest, 'current')))).toEqual(['vault.kdbx'])
+  expect(Object.keys(await readTree(w.dest))).toEqual([
+    '.trash/2026-11-02_100002/tax.pdf',
+    'vault.kdbx'
+  ])
   expect((await w.changes('r2')).map((c) => [c.action, c.path])).toEqual([['trashed', 'tax.pdf']])
 })
 
@@ -58,7 +61,7 @@ test('a missing file is skipped with a warning and its backup is kept', async ()
   await rm(join(w.base, 'desk/tax.pdf'))
   const log = await w.run('r2')
   expect(log.jobs[0].status).toBe('completed-with-warnings')
-  expect(Object.keys(await readTree(join(w.dest, 'current')))).toEqual(['tax.pdf', 'vault.kdbx'])
+  expect(Object.keys(await readTree(w.dest))).toEqual(['tax.pdf', 'vault.kdbx'])
 })
 
 test('every file missing → job skipped as source not available', async () => {
@@ -72,13 +75,11 @@ test('every file missing → job skipped as source not available', async () => {
 test('one zip holds every file; zip each item makes one zip per file', async () => {
   const one = await world({ packaging: 'zip-whole' })
   await one.run('r1')
-  expect(readdirSync(join(one.dest, 'current')).filter((n) => n.endsWith('.zip'))).toEqual([
-    'Important.zip'
-  ])
+  expect(readdirSync(one.dest).filter((n) => n.endsWith('.zip'))).toEqual(['Important.zip'])
   const each = await world({ packaging: 'zip-children' })
   await each.run('r1')
   expect(
-    readdirSync(join(each.dest, 'current'))
+    readdirSync(each.dest)
       .filter((n) => n.endsWith('.zip'))
       .sort()
   ).toEqual(['tax.pdf.zip', 'vault.kdbx.zip'])

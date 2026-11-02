@@ -27,7 +27,7 @@ async function world(files: Record<string, number>, limit: number | null): Promi
   for (const [rel, size] of Object.entries(files)) await put(src, rel, size)
   const source = { ...newSource(src, 'S', []), packaging: 'zip-whole' as const }
   source.zip = { ...source.zip, level: 0, partLimitBytes: limit }
-  return { src, root, source, dest: new FsDestination(root), current: join(root, 'S', 'current') }
+  return { src, root, source, dest: new FsDestination(root), current: join(root, 'S') }
 }
 
 async function put(dir: string, rel: string, size: number): Promise<void> {
@@ -60,7 +60,9 @@ async function run(w: World, changes: ChangeEntry[] = []): Promise<JobResult> {
 }
 
 const names = async (dir: string): Promise<string[]> =>
-  (await readdir(dir)).filter((n) => n !== MANIFEST_NAME).sort()
+  (await readdir(dir))
+    .filter((n) => n !== MANIFEST_NAME && n !== '.backup-manager-layout' && n !== '.trash')
+    .sort()
 
 function unzip(file: string): Promise<Record<string, Buffer>> {
   return new Promise((resolve, reject) => {

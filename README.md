@@ -99,8 +99,13 @@ What lands where, for a source with folder name `S`:
 
 | Mode     | Copy files              | One zip                   | Zip each item                    |
 | -------- | ----------------------- | ------------------------- | -------------------------------- |
-| Mirror   | `S/current/…`           | `S/current/S.zip`         | `S/current/<item>.zip`           |
+| Mirror   | `S/…`                   | `S/S.zip`                 | `S/<item>.zip`                   |
 | Snapshot | `S/2026-10-26_154307/…` | `S/2026-10-26_154307.zip` | `S/2026-10-26_154307/<item>.zip` |
+
+A mirror also keeps a few hidden items of its own in `S/`: `.trash/` for removed files,
+`.backup-manager.json` (zip mirrors) and `.backup-manager-layout`. A file or folder in your
+source with one of those names at its top level is skipped with a warning. Backups made by
+earlier versions in `S/current/` are moved up into `S/` on their next run.
 
 ### 3. Preview and run
 

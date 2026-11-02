@@ -79,7 +79,7 @@ test('destination removed mid-job → failed destination-lost, next job runs, no
   expect(log.jobs[0]).toMatchObject({ status: 'failed', reason: 'destination-lost' })
   expect(log.jobs[1].status).toBe('completed')
   expect(log.status).toBe('failed')
-  expect(await readTree(join(base, 'd2'))).toEqual({ 'S2/current/x.txt': 'x' })
+  expect(await readTree(join(base, 'd2'))).toEqual({ 'S2/x.txt': 'x' })
 })
 
 test('cancel during job 1 → job 1 cancelled, job 2 cancelled without running, run cancelled', async () => {

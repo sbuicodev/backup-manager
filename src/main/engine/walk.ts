@@ -7,6 +7,8 @@ export type WalkOptions = {
   excludes: string[]
   signal?: AbortSignal
   skipNames?: (name: string) => boolean
+  /** Entries directly in root to leave out entirely (not walked, not reported). */
+  skipTop?: (name: string) => boolean
 }
 
 /**
@@ -72,6 +74,7 @@ export async function walkTree(
     }
     for await (const d of dir) {
       if (opts.skipNames?.(d.name)) continue
+      if (isRoot && opts.skipTop?.(d.name)) continue
       const rel = relDir === '' ? d.name : `${relDir}/${d.name}`
       const abs = join(absDir, d.name)
       if (d.isSymbolicLink()) {

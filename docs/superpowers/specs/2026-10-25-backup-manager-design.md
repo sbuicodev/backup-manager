@@ -209,18 +209,27 @@ For source slug `S` at destination root `D`:
 
 | mode     | packaging      | output                                              |
 |----------|----------------|-----------------------------------------------------|
-| mirror   | copy           | `D/S/current/<files…>`                              |
-| mirror   | zip-whole      | `D/S/current/S.zip`                                 |
-| mirror   | zip-children   | `D/S/current/<child>.zip` (+ `_files.zip` if bundling) |
+| mirror   | copy           | `D/S/<files…>`                                      |
+| mirror   | zip-whole      | `D/S/S.zip`                                         |
+| mirror   | zip-children   | `D/S/<child>.zip` (+ `_files.zip` if bundling)      |
 | snapshot | copy           | `D/S/<YYYY-MM-DD_HHmmss>/<files…>`                  |
 | snapshot | zip-whole      | `D/S/<YYYY-MM-DD_HHmmss>.zip`                       |
 | snapshot | zip-children   | `D/S/<YYYY-MM-DD_HHmmss>/<child>.zip …`             |
 
 - Mirror trash: `D/S/.trash/<YYYY-MM-DD_HHmmss>/<relative path>`.
+- The mirror lives directly in `D/S/` (earlier versions used `D/S/current/`). Its own hidden
+  items there — `.trash`, `.backup-manager.json`, `.backup-manager-layout` (a marker saying the
+  layout is current) — are never compared, trashed or deleted; a source item with one of those
+  names at its top level is skipped with a warning. Top-level names that look like snapshots
+  (left by an earlier snapshot mode) are never removed by the mirror unless the source has them.
+- A backup still in `D/S/current/` is planned from there and moved up into `D/S/` (renames only)
+  at the start of its next mirror run; a name that already exists in `D/S/` stops the job with an
+  error, leaving the rest in `current/` for the next run. The marker is written afterwards, so a
+  source with its own top-level `current` folder is never moved twice.
 - Timestamps use local time; if a name already exists, append `-2`, `-3`, ….
 - `zip-children`: each top-level directory → `<dir>.zip`. Each loose top-level file →
   `<file>.zip` (`individual`) or all of them in `_files.zip` (`bundle`).
-- Mirror + zip keeps a sidecar manifest `D/S/current/.backup-manager.json` recording a
+- Mirror + zip keeps a sidecar manifest `D/S/.backup-manager.json` recording a
   fingerprint (hash of sorted `path|size|mtime` entries) for each produced archive. An
   archive is regenerated only when its fingerprint changes, so unchanged children are not
   rewritten — important for OneDrive, which re-uploads any changed file in full.
@@ -260,13 +269,13 @@ run); the preview is informative, not a contract.
 
 ### 6.4 Mirror (copy)
 
-- Diff source files against `current/`: a file is copied if missing or if size differs or
+- Diff source files against the mirror in `D/S/`: a file is copied if missing or if size differs or
   mtime differs by more than 2 s (FAT/exFAT have 2 s resolution).
 - Copies preserve mtime (`fs.utimes`) so subsequent diffs are stable.
 - Each copy writes to a temporary sibling `.<hash>.bm-partial` in the same directory (a short
   hashed name, so long file names never exceed name-length limits), verifies the size, then
   renames over the target.
-- Files present in `current/` but not in the source (and not excluded) are handled per
+- Files present in the mirror but not in the source (and not excluded) are handled per
   `deletion`: `trash` → moved under `.trash/<run timestamp>/`; `exact` → deleted; `never` →
   left alone. Empty directories left behind are removed (except under `never`).
 - Excluded paths at the destination are never touched.
