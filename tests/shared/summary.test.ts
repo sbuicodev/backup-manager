@@ -5,7 +5,9 @@ import {
   backupSummary,
   backupTone,
   formatAgo,
-  pairStatus
+  optionsSummary,
+  pairStatus,
+  shortPath
 } from '../../src/renderer/src/lib/summary'
 
 const now = new Date(2026, 10, 3, 15, 0)
@@ -153,5 +155,33 @@ describe('backupTone', () => {
   })
   test('results for a drive no longer used are ignored', () => {
     expect(backupTone(src(), [dest], [ok, bad], status(), false)).toBe('ok')
+  })
+})
+
+test('shortPath shows home folders as ~', () => {
+  expect(shortPath('/Users/me/Documents')).toBe('~/Documents')
+  expect(shortPath('/home/me/notes.md')).toBe('~/notes.md')
+  expect(shortPath('C:\\Users\\me\\Desktop\\tax.pdf')).toBe('~\\Desktop\\tax.pdf')
+  expect(shortPath('/Volumes/NAS/backups')).toBe('/Volumes/NAS/backups')
+})
+
+describe('optionsSummary', () => {
+  test('mirror with trash and exclusions', () => {
+    const s = src({ excludes: ['*.tmp', 'node_modules/'] })
+    s.mirror = { deletion: 'trash', trashRetentionDays: 30 }
+    expect(optionsSummary(s)).toBe('Deleted files kept in the trash for 30 days · 2 exclusions')
+  })
+  test('versions, kept forever, zip split', () => {
+    const s = src({ mode: 'snapshot', packaging: 'zip-whole' })
+    s.zip = { ...s.zip, partLimitBytes: 4 * 1024 ** 3 }
+    expect(optionsSummary(s)).toBe('Keeps at least 10 versions · zips split at 4 GB')
+  })
+  test('other deletion policies and retries off', () => {
+    const exact = src({ retryWhenAvailable: false })
+    exact.mirror = { deletion: 'exact', trashRetentionDays: null }
+    expect(optionsSummary(exact)).toBe('Deleted files removed from the backup · no retries')
+    const never = src()
+    never.mirror = { deletion: 'never', trashRetentionDays: null }
+    expect(optionsSummary(never)).toBe('Deleted files stay in the backup')
   })
 })

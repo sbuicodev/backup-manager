@@ -113,3 +113,43 @@ export function backupTone(
   if (mine.some((r) => r.status === 'completed')) return 'ok'
   return 'idle'
 }
+
+/** A path with the user's home folder shown as `~` (macOS, Linux and Windows layouts). */
+export function shortPath(p: string): string {
+  return p.replace(/^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)(?=[\\/]|$)/, '~')
+}
+
+const GB = 1024 ** 3
+const sizeText = (n: number): string =>
+  n >= GB ? `${+(n / GB).toFixed(1)} GB` : `${Math.round(n / 1024 ** 2)} MB`
+
+/** The settings not shown elsewhere on a backup's page, in one line. */
+export function optionsSummary(source: Source): string {
+  const parts: string[] = []
+  if (source.mode === 'snapshot') {
+    const { keepMin, maxAgeDays } = source.snapshot
+    parts.push(
+      `Keeps at least ${keepMin} versions` +
+        (maxAgeDays !== null ? `, deletes those older than ${maxAgeDays} days` : '')
+    )
+  } else if (source.mirror.deletion === 'trash') {
+    const days = source.mirror.trashRetentionDays
+    parts.push(`Deleted files kept in the trash ${days === null ? 'forever' : `for ${days} days`}`)
+  } else {
+    parts.push(
+      source.mirror.deletion === 'exact'
+        ? 'Deleted files removed from the backup'
+        : 'Deleted files stay in the backup'
+    )
+  }
+  if (source.excludes.length > 0) {
+    parts.push(
+      source.excludes.length === 1 ? '1 exclusion' : `${source.excludes.length} exclusions`
+    )
+  }
+  if (source.packaging !== 'copy' && source.zip.partLimitBytes !== null) {
+    parts.push(`zips split at ${sizeText(source.zip.partLimitBytes)}`)
+  }
+  if (!source.retryWhenAvailable) parts.push('no retries')
+  return parts.join(' · ')
+}

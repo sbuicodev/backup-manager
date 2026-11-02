@@ -26,7 +26,9 @@ import { cn } from '@/lib/utils'
 import { useRunProgress } from '@/hooks/useRunProgress'
 import { Destinations } from '@/screens/Destinations'
 import { History } from '@/screens/History'
+import { BackupPage } from '@/screens/BackupPage'
 import { Settings } from '@/screens/Settings'
+import { SourceEditor } from '@/screens/SourceEditor'
 import { Sources } from '@/screens/Sources'
 
 /** Back up now, or Stop while a run is active; hovering previews what a run would do. */
@@ -232,6 +234,8 @@ function App(): React.JSX.Element {
   const availability = useAvailability()
   const [picked, setPicked] = useState<Selection | null>(null)
   const [runId, setRunId] = useState<string | undefined>()
+  // Until editing moves onto the page (Task 6), Edit opens the previous editor sheet.
+  const [editing, setEditing] = useState<string | null>(null)
   const [collapsed, toggleSidebar] = useSidebarCollapsed()
   const glass = cfg.state?.ok ? cfg.state.config.settings.glass : false
   useGlassClasses(glass)
@@ -283,9 +287,23 @@ function App(): React.JSX.Element {
               <div className="mx-auto w-full max-w-5xl">
                 {selection.kind === 'empty' && <EmptyState onNew={() => select({ kind: 'new' })} />}
                 {/* Until their new pages land, these show the previous screens. */}
-                {(selection.kind === 'backup' || selection.kind === 'new') && (
-                  <Sources cfg={cfg} config={config} status={status} />
+                {selection.kind === 'backup' && (
+                  <BackupPage
+                    config={config}
+                    source={config.sources.find((x) => x.id === selection.id)!}
+                    status={status}
+                    results={results}
+                    availability={availability}
+                    progress={progress}
+                    running={runningSourceId === selection.id}
+                    onEdit={() => setEditing(selection.id)}
+                    onOpenRun={(id) => {
+                      setPicked({ kind: 'activity' })
+                      setRunId(id)
+                    }}
+                  />
                 )}
+                {selection.kind === 'new' && <Sources cfg={cfg} config={config} status={status} />}
                 {selection.kind === 'drive' && <Destinations cfg={cfg} config={config} />}
                 {selection.kind === 'activity' && (
                   <History
@@ -303,6 +321,14 @@ function App(): React.JSX.Element {
           </main>
         </div>
       </div>
+      {editing && config.sources.some((x) => x.id === editing) && (
+        <SourceEditor
+          config={config}
+          initial={config.sources.find((x) => x.id === editing)!}
+          onSave={cfg.save}
+          onClose={() => setEditing(null)}
+        />
+      )}
       <Toaster position="bottom-right" />
     </TooltipProvider>
   )
