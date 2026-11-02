@@ -35,7 +35,8 @@ describe('schema', () => {
     expect(c.settings).toEqual({
       launchAtLogin: true,
       notifications: 'problems',
-      skipScheduledOnBattery: false
+      skipScheduledOnBattery: false,
+      glass: 'frosted'
     })
   })
 
@@ -366,4 +367,15 @@ describe('Files sources', () => {
   test('a folder source still needs an absolute path', () => {
     expect(errorsOf(cfgWith((c) => c.sources.push(newSource('rel', 'A', []))))).not.toEqual([])
   })
+})
+
+test('glass appearance defaults to frosted; old settings load with it', () => {
+  expect(defaultConfig().settings.glass).toBe('frosted')
+  const old = defaultConfig() as unknown as { settings: Record<string, unknown> }
+  delete old.settings.glass
+  const r = validateConfig(old)
+  expect(r.ok && r.config.settings.glass).toBe('frosted')
+  expect(
+    errorsOf({ ...defaultConfig(), settings: { ...defaultConfig().settings, glass: 'shiny' } })
+  ).not.toEqual([])
 })

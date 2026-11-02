@@ -8,7 +8,8 @@ import {
   titleBarOptions,
   titleBarOverlay,
   trayActions,
-  trayStatusLine
+  trayStatusLine,
+  windowVibrancy
 } from '../../src/main/os-helpers'
 
 const now = new Date(2026, 9, 26, 10, 0) // Monday
@@ -149,5 +150,17 @@ describe('titleBarOptions', () => {
       symbolColor: '#fafafa',
       height: TOP_BAR_HEIGHT
     })
+  })
+})
+
+describe('windowVibrancy', () => {
+  test('macOS with glass on: native under-window translucency; off: none', () => {
+    expect(windowVibrancy('darwin', 'frosted')).toBe('under-window')
+    expect(windowVibrancy('darwin', 'refract')).toBe('under-window')
+    expect(windowVibrancy('darwin', 'off')).toBeNull()
+  })
+  test('other platforms never get it', () => {
+    expect(windowVibrancy('win32', 'frosted')).toBeNull()
+    expect(windowVibrancy('linux', 'liquid')).toBeNull()
   })
 })

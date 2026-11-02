@@ -29,10 +29,14 @@ export const ScheduleSchema = z.discriminatedUnion('kind', [
   })
 ])
 
+/** macOS glass appearance, lightest to strongest; 'off' keeps the solid look. */
+export const GLASS_LEVELS = ['subtle', 'clear', 'frosted', 'liquid', 'refract'] as const
+
 export const SettingsSchema = z.object({
   launchAtLogin: z.boolean(),
   notifications: z.enum(['problems', 'always', 'never']),
-  skipScheduledOnBattery: z.boolean()
+  skipScheduledOnBattery: z.boolean(),
+  glass: z.enum(['off', ...GLASS_LEVELS]).default('frosted')
 })
 
 /** Smallest allowed zip part limit or chunk size: 1 MiB. */
@@ -224,7 +228,12 @@ export function defaultConfig(): Config {
   return {
     version: 1,
     globalExcludes: [...DEFAULT_GLOBAL_EXCLUDES],
-    settings: { launchAtLogin: true, notifications: 'problems', skipScheduledOnBattery: false },
+    settings: {
+      launchAtLogin: true,
+      notifications: 'problems',
+      skipScheduledOnBattery: false,
+      glass: 'frosted'
+    },
     destinations: [],
     sources: []
   }

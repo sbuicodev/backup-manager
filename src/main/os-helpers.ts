@@ -88,3 +88,11 @@ export function titleBarOptions(
   }
   return { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay(dark) }
 }
+
+/** Native macOS window translucency behind the glass look; none when glass is off or elsewhere. */
+export function windowVibrancy(
+  platform: NodeJS.Platform,
+  glass: Settings['glass']
+): 'under-window' | null {
+  return platform === 'darwin' && glass !== 'off' ? 'under-window' : null
+}

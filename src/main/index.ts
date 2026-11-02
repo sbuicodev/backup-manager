@@ -15,7 +15,7 @@ import icon from '../../resources/icon.png?asset'
 import { createHandlers } from './handlers'
 import { registerIpc } from './ipc'
 import { notifyRunFinished, setLaunchAtLogin, startedHidden } from './os'
-import { titleBarOptions, titleBarOverlay } from './os-helpers'
+import { titleBarOptions, titleBarOverlay, windowVibrancy } from './os-helpers'
 import { createServices, type Services } from './services'
 import { createTray } from './tray'
 
@@ -43,6 +43,11 @@ function navigate(screen: Screen, arg?: string): void {
   else go()
 }
 
+/** The window's macOS translucency for the current glass setting. */
+function vibrancy(): 'under-window' | null {
+  return windowVibrancy(process.platform, services?.config().settings.glass ?? 'off')
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1100,
@@ -54,6 +59,14 @@ function createWindow(): void {
     title: 'Backup Manager',
     // The app draws its own top bar; the OS keeps its native window controls in it.
     ...titleBarOptions(process.platform, nativeTheme.shouldUseDarkColors),
+    // macOS glass: the page is transparent where the native translucency should show.
+    ...(vibrancy()
+      ? {
+          vibrancy: vibrancy()!,
+          visualEffectState: 'active' as const,
+          backgroundColor: '#00000000'
+        }
+      : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -159,7 +172,12 @@ if (!app.requestSingleInstanceLock()) {
 
     let launchAtLogin = svc.config().settings.launchAtLogin
     void setLaunchAtLogin(launchAtLogin)
+    let glass = svc.config().settings.glass
     svc.onConfigChange((c) => {
+      if (c.settings.glass !== glass) {
+        glass = c.settings.glass
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setVibrancy(vibrancy())
+      }
       if (c.settings.launchAtLogin !== launchAtLogin) {
         launchAtLogin = c.settings.launchAtLogin
         void setLaunchAtLogin(launchAtLogin)

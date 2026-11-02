@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Download, Upload } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Config, Settings as SettingsT } from '@shared/schema'
+import { GLASS_LEVELS, type Config, type Settings as SettingsT } from '@shared/schema'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,10 +13,67 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
 import type { UseConfig } from '@/hooks/useConfig'
+
+const GLASS_LABELS: Record<(typeof GLASS_LEVELS)[number], string> = {
+  subtle: 'Subtle',
+  clear: 'Clear',
+  frosted: 'Frosted',
+  liquid: 'Liquid',
+  refract: 'Liquid refract'
+}
+
+/** macOS only: glass on/off and its strength, lightest to strongest. */
+function GlassCard({
+  glass,
+  onChange
+}: {
+  glass: SettingsT['glass']
+  onChange: (g: SettingsT['glass']) => void
+}): React.JSX.Element {
+  const level = glass === 'off' ? -1 : GLASS_LEVELS.indexOf(glass)
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Appearance</CardTitle>
+        <CardDescription>A translucent window that lets the desktop show through.</CardDescription>
+      </CardHeader>
+      <CardContent className="divide-y">
+        <Row label="Glass appearance">
+          <Switch
+            checked={glass !== 'off'}
+            onCheckedChange={(on) => onChange(on ? 'frosted' : 'off')}
+          />
+        </Row>
+        {glass !== 'off' && (
+          <div className="grid gap-3 py-4">
+            <div className="flex items-center justify-between text-sm">
+              <Label>Glass effect</Label>
+              <span className="text-muted-foreground">{GLASS_LABELS[glass]}</span>
+            </div>
+            <Slider
+              min={0}
+              max={GLASS_LEVELS.length - 1}
+              step={1}
+              value={[level]}
+              onValueChange={([i]) => onChange(GLASS_LEVELS[i])}
+              aria-label="Glass effect"
+            />
+            <div className="text-muted-foreground flex justify-between text-xs">
+              {GLASS_LEVELS.map((g) => (
+                <span key={g}>{GLASS_LABELS[g]}</span>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
 
 function Row({
   label,
@@ -77,6 +134,9 @@ export function Settings({
     <div>
       <PageHeader title="Settings" />
       <div className="grid gap-6">
+        {api.app.platform === 'darwin' && (
+          <GlassCard glass={config.settings.glass} onChange={(g) => void setSetting('glass', g)} />
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Background</CardTitle>

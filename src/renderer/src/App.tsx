@@ -8,7 +8,7 @@ import {
   Settings as SettingsIcon
 } from 'lucide-react'
 import type { Screen } from '@shared/ipc'
-import type { Config } from '@shared/schema'
+import type { Config, Settings as SettingsT } from '@shared/schema'
 import type { SchedulerStatus } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -149,6 +149,35 @@ function ConfigError({
   )
 }
 
+/** Puts `glass glass-<level>` on <html> on macOS while the glass appearance is on. */
+function useGlassClasses(glass: SettingsT['glass']): void {
+  useEffect(() => {
+    const on = api.app.platform === 'darwin' && glass !== 'off'
+    const html = document.documentElement
+    html.classList.remove(...[...html.classList].filter((c) => c.startsWith('glass')))
+    if (on) html.classList.add('glass', `glass-${glass}`)
+  }, [glass])
+}
+
+/** Displacement filter for the Refract level, referenced from main.css. */
+function GlassRefractFilter(): React.JSX.Element {
+  return (
+    <svg aria-hidden className="pointer-events-none absolute size-0">
+      <filter id="glass-refract" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" />
+        <feGaussianBlur stdDeviation="2" result="map" />
+        <feDisplacementMap
+          in="SourceGraphic"
+          in2="map"
+          scale="40"
+          xChannelSelector="R"
+          yChannelSelector="G"
+        />
+      </filter>
+    </svg>
+  )
+}
+
 const COLLAPSED_KEY = 'sidebar-collapsed'
 
 /** Sidebar collapsed state, remembered in this window's local storage when it is available. */
@@ -180,6 +209,8 @@ function App(): React.JSX.Element {
   const [screen, setScreen] = useState<Screen>('sources')
   const [screenArg, setScreenArg] = useState<string | undefined>()
   const [collapsed, toggleSidebar] = useSidebarCollapsed()
+  const glass = cfg.state?.ok ? cfg.state.config.settings.glass : 'off'
+  useGlassClasses(glass)
 
   useEffect(
     () =>
@@ -198,6 +229,7 @@ function App(): React.JSX.Element {
 
   return (
     <TooltipProvider>
+      {glass === 'refract' && <GlassRefractFilter />}
       <div className="flex h-full flex-col">
         <TopBar sidebar={{ collapsed, onToggle: toggleSidebar }}>
           <SchedulerStatusControls status={status} config={config} />
