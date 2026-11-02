@@ -154,16 +154,19 @@ function defaultSchedule(kind: Schedule['kind']): Schedule {
 export function SourceEditor({
   config,
   initial,
+  kind,
   onSave,
   onClose
 }: {
   config: Config
   initial: Source | null
+  /** Folder or Files, chosen before the editor opens; it does not change while editing. */
+  kind: Source['kind']
   onSave: (next: Config) => Promise<string[] | null>
   onClose: () => void
 }): React.JSX.Element {
   const otherSlugs = config.sources.filter((s) => s.id !== initial?.id).map((s) => s.slug)
-  const [s, setS] = useState<Source>(() => initial ?? newSource('', '', otherSlugs))
+  const [s, setS] = useState<Source>(() => initial ?? { ...newSource('', '', otherSlugs), kind })
   const [slugTouched, setSlugTouched] = useState(initial !== null)
   const [modeTouched, setModeTouched] = useState(initial !== null)
   const [excludes, setExcludes] = useState(s.excludes.join('\n'))
@@ -232,7 +235,9 @@ export function SourceEditor({
     <Sheet open onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="flex w-full flex-col gap-0 sm:max-w-xl">
         <SheetHeader className="border-b">
-          <SheetTitle>{initial ? `Edit “${initial.name}”` : 'Add source'}</SheetTitle>
+          <SheetTitle>
+            {initial ? `Edit “${initial.name}”` : files ? 'Add files' : 'Add folder'}
+          </SheetTitle>
           <SheetDescription>What to back up and how to store it.</SheetDescription>
         </SheetHeader>
         <div className="grid flex-1 gap-6 overflow-y-auto p-4">
@@ -244,15 +249,7 @@ export function SourceEditor({
             </div>
           )}
 
-          <Section title="What to back up">
-            <ChoiceButtons
-              value={s.kind}
-              onChange={(kind) => patch({ kind })}
-              options={[
-                { id: 'folder', label: 'Folder', hint: 'Everything inside one folder' },
-                { id: 'files', label: 'Files', hint: 'Hand-picked files from anywhere' }
-              ]}
-            />
+          <Section title={files ? 'Files' : 'Folder'}>
             {files ? (
               <div className="grid min-w-0 gap-1 overflow-hidden">
                 {s.files.map((f) => (

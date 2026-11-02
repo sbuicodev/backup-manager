@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderInput, Pencil, Play, Plus, Trash2 } from 'lucide-react'
+import { Files, Folder, FolderInput, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Config, Source } from '@shared/schema'
 import type { SchedulerStatus } from '@shared/types'
@@ -16,6 +16,12 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import {
   Table,
@@ -48,7 +54,8 @@ export function Sources({
   status: SchedulerStatus | null
 }): React.JSX.Element {
   const now = useNow()
-  const [editing, setEditing] = useState<Source | 'new' | null>(null)
+  // A new source starts as a folder or as a list of files; the editor shows only that variation.
+  const [editing, setEditing] = useState<Source | 'new-folder' | 'new-files' | null>(null)
   const [deleting, setDeleting] = useState<Source | null>(null)
   const ownedByDeleting = deleting
     ? config.destinations.filter((d) => d.ownerSourceId === deleting.id)
@@ -74,9 +81,21 @@ export function Sources({
         title="Sources"
         description="Folders and files to back up. Each source has its own packaging, mode and schedule."
         actions={
-          <Button onClick={() => setEditing('new')}>
-            <Plus /> Add source
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>
+                <Plus /> Add source
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setEditing('new-folder')}>
+                <Folder /> Folder…
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setEditing('new-files')}>
+                <Files /> Files…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
       />
       {config.sources.length === 0 ? (
@@ -165,7 +184,10 @@ export function Sources({
       {editing && (
         <SourceEditor
           config={config}
-          initial={editing === 'new' ? null : editing}
+          initial={typeof editing === 'string' ? null : editing}
+          kind={
+            editing === 'new-files' ? 'files' : editing === 'new-folder' ? 'folder' : editing.kind
+          }
           onSave={cfg.save}
           onClose={() => setEditing(null)}
         />
