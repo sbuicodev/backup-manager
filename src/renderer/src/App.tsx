@@ -24,7 +24,7 @@ import { formatRelativeTime } from '@/lib/format'
 import { headerRetryText } from '@/lib/retry'
 import { cn } from '@/lib/utils'
 import { useRunProgress } from '@/hooks/useRunProgress'
-import { Destinations } from '@/screens/Destinations'
+import { DrivePage } from '@/screens/DrivePage'
 import { History } from '@/screens/History'
 import { BackupEditPage, BackupPage } from '@/screens/BackupPage'
 import {
@@ -370,7 +370,16 @@ function App(): React.JSX.Element {
                   />
                 )}
                 {selection.kind === 'new' && <Sources cfg={cfg} config={config} status={status} />}
-                {selection.kind === 'drive' && <Destinations cfg={cfg} config={config} />}
+                {selection.kind === 'drive' && (
+                  <DrivePage
+                    cfg={cfg}
+                    config={config}
+                    dest={config.destinations.find((x) => x.id === selection.id)!}
+                    results={results}
+                    status={status}
+                    onSelect={select}
+                  />
+                )}
                 {selection.kind === 'activity' && (
                   <History
                     config={config}

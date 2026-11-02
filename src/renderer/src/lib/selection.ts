@@ -60,3 +60,25 @@ export function planPreview(plan: Plan): string {
   ].filter(Boolean)
   return parts.join(' · ')
 }
+
+/** Backups that go to a drive: its owner for a drive of one backup, else those that select it. */
+export function backupsOn(config: Config, destId: string): Source[] {
+  const d = config.destinations.find((x) => x.id === destId)
+  if (!d) return []
+  if (d.ownerSourceId) return config.sources.filter((s) => s.id === d.ownerSourceId)
+  return config.sources.filter(
+    (s) => s.destinationIds === 'all' || s.destinationIds.includes(destId)
+  )
+}
+
+/** The configuration with one more backup going to a shared drive. */
+export function sendBackupTo(config: Config, sourceId: string, destId: string): Config {
+  return {
+    ...config,
+    sources: config.sources.map((s) =>
+      s.id !== sourceId || s.destinationIds === 'all' || s.destinationIds.includes(destId)
+        ? s
+        : { ...s, destinationIds: [...s.destinationIds, destId] }
+    )
+  }
+}

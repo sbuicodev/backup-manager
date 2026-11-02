@@ -2,9 +2,11 @@ import { expect, test } from 'vitest'
 import { defaultConfig, newDestination, newSource } from '@shared/schema'
 import type { Plan } from '@shared/types'
 import {
+  backupsOn,
   duplicateSource,
   planPreview,
-  resolveSelection
+  resolveSelection,
+  sendBackupTo
 } from '../../src/renderer/src/lib/selection'
 
 const cfg = (): ReturnType<typeof defaultConfig> => {
@@ -73,4 +75,16 @@ test('planPreview summarises what Back up now would do', () => {
     })
   ).toBe('Everything is up to date')
   expect(planPreview({ createdAt: '', jobs: [] })).toBe('Nothing to back up')
+})
+
+test('backupsOn lists the backups that go to a drive; sendBackupTo adds one', () => {
+  const c = cfg()
+  c.destinations.push({ ...newDestination('/e', 'USB'), id: 'd2' })
+  c.sources[0] = { ...c.sources[0], destinationIds: ['d1'] }
+  // s2 keeps 'all' → goes to both
+  expect(backupsOn(c, 'd1').map((s) => s.id)).toEqual(['s1', 's2'])
+  expect(backupsOn(c, 'd2').map((s) => s.id)).toEqual(['s2'])
+  const next = sendBackupTo(c, 's1', 'd2')
+  expect(next.sources[0].destinationIds).toEqual(['d1', 'd2'])
+  expect(backupsOn(next, 'd2').map((s) => s.id)).toEqual(['s1', 's2'])
 })

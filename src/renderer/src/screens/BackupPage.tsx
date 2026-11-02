@@ -144,7 +144,7 @@ export function BackupPage({
       : 0
 
   return (
-    <div className="grid gap-6">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
       <header className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h1 className="truncate text-xl font-semibold">{source.name}</h1>
