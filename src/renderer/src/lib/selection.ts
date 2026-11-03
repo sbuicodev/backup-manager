@@ -82,3 +82,8 @@ export function sendBackupTo(config: Config, sourceId: string, destId: string): 
     )
   }
 }
+
+/** Moving elsewhere (sidebar, tray, notification): with unsaved edits, ask first. */
+export function leaveTo(dirty: boolean, target: Selection): { ask: Selection } | { go: Selection } {
+  return dirty ? { ask: target } : { go: target }
+}

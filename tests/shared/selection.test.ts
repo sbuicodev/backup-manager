@@ -3,6 +3,7 @@ import { defaultConfig, newDestination, newSource } from '@shared/schema'
 import type { Plan } from '@shared/types'
 import {
   backupsOn,
+  leaveTo,
   duplicateSource,
   planPreview,
   resolveSelection,
@@ -87,4 +88,9 @@ test('backupsOn lists the backups that go to a drive; sendBackupTo adds one', ()
   const next = sendBackupTo(c, 's1', 'd2')
   expect(next.sources[0].destinationIds).toEqual(['d1', 'd2'])
   expect(backupsOn(next, 'd2').map((s) => s.id)).toEqual(['s1', 's2'])
+})
+
+test('leaveTo asks first when there are unsaved edits, whoever asked to leave', () => {
+  expect(leaveTo(true, { kind: 'activity' })).toEqual({ ask: { kind: 'activity' } })
+  expect(leaveTo(false, { kind: 'backup', id: 's2' })).toEqual({ go: { kind: 'backup', id: 's2' } })
 })

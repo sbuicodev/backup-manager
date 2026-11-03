@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Archive, Pause, Play, Plus, Square } from 'lucide-react'
 import type { Config } from '@shared/schema'
 import type { SchedulerStatus } from '@shared/types'
@@ -14,7 +14,7 @@ import { TopBar } from '@/components/TopBar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAvailability } from '@/hooks/useAvailability'
 import { useLatestResults } from '@/hooks/useLatestResults'
-import { planPreview, resolveSelection, type Selection } from '@/lib/selection'
+import { leaveTo, planPreview, resolveSelection, type Selection } from '@/lib/selection'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useConfig } from '@/hooks/useConfig'
@@ -250,6 +250,11 @@ function App(): React.JSX.Element {
   const [pendingSel, setPendingSel] = useState<Selection | null>(null)
   const configNow = cfg.state?.ok ? cfg.state.config : null
   const dirty = draft !== null && configNow !== null && isDirty(configNow, draft)
+  // Main-process events subscribe once, so they reach the current state through refs.
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
+  const selectRef = useRef<(s: Selection) => void>(() => {})
+  const runIdAfterLeave = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (!dirty) return
     // Quitting with unsaved edits: main shows a Discard / Cancel prompt.
@@ -268,13 +273,12 @@ function App(): React.JSX.Element {
     () =>
       // Notifications open a run in Activity; anything else goes to its new home.
       api.app.onNavigate((s, arg) => {
-        setPicked(s === 'settings' ? { kind: 'settings' } : { kind: 'activity' })
-        setRunId(s === 'history' ? arg : undefined)
-        setDraft(null)
+        runIdAfterLeave.current = s === 'history' ? arg : undefined
+        selectRef.current(s === 'settings' ? { kind: 'settings' } : { kind: 'activity' })
       }),
     []
   )
-  useEffect(() => api.app.onSelect((sel) => setPicked(sel)), [])
+  useEffect(() => api.app.onSelect((sel) => selectRef.current(sel)), [])
 
   if (!cfg.state) return <div />
   if (!cfg.state.ok) {
@@ -286,10 +290,17 @@ function App(): React.JSX.Element {
     setDraft(null)
     setFormErrors({})
     setPicked(s)
-    setRunId(undefined)
+    // A notification asks for one run; it opens once leaving is settled.
+    setRunId(runIdAfterLeave.current)
+    runIdAfterLeave.current = undefined
   }
-  // Leaving a backup with unsaved edits asks first.
-  const select = (s: Selection): void => (dirty ? setPendingSel(s) : go(s))
+  // Leaving a backup with unsaved edits asks first, whether from the sidebar, tray or a notification.
+  const select = (s: Selection): void => {
+    const r = leaveTo(dirtyRef.current, s)
+    if ('ask' in r) setPendingSel(r.ask)
+    else go(r.go)
+  }
+  selectRef.current = select
   const saveDraft = async (): Promise<boolean> => {
     if (!draft) return true
     const r = buildNextConfig(config, draft)
@@ -403,7 +414,14 @@ function App(): React.JSX.Element {
           </main>
         </div>
       </div>
-      <AlertDialog open={pendingSel !== null} onOpenChange={(o) => !o && setPendingSel(null)}>
+      <AlertDialog
+        open={pendingSel !== null}
+        onOpenChange={(o) => {
+          if (o) return
+          setPendingSel(null)
+          runIdAfterLeave.current = undefined
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Save your changes to “{draft?.source.name}”?</AlertDialogTitle>
@@ -426,8 +444,13 @@ function App(): React.JSX.Element {
             <AlertDialogAction
               onClick={() => {
                 const s = pendingSel
+                const run = runIdAfterLeave.current // the dialog closing clears it
                 setPendingSel(null)
-                void saveDraft().then((ok) => ok && s && go(s))
+                void saveDraft().then((ok) => {
+                  if (!ok || !s) return
+                  runIdAfterLeave.current = run
+                  go(s)
+                })
               }}
             >
               Save
