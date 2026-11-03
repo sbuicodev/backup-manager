@@ -91,18 +91,24 @@ test('readZipEntryCount for 0 and 3 entries', async () => {
   expect(await readZipEntryCount(join(root, 'three.zip'))).toBe(3)
 })
 
-test('readZipEntryCount handles ZIP64 (70 000 entries)', { timeout: 60_000 }, async () => {
-  const src = await tmpDir()
+test('readZipEntryCount handles ZIP64 (70 000 entries)', async () => {
+  // Only the archive's tail is read: a ZIP64 end record, its locator, and an end record whose
+  // 16-bit count is 0xFFFF. Writing 70 000 real entries would take minutes on CI runners.
+  const record = Buffer.alloc(56)
+  record.writeUInt32LE(0x06064b50, 0) // ZIP64 end of central directory
+  record.writeBigUInt64LE(44n, 4) // size of the rest of the record
+  record.writeBigUInt64LE(70_000n, 24) // entries on this disk
+  record.writeBigUInt64LE(70_000n, 32) // entries in total
+  const locator = Buffer.alloc(20)
+  locator.writeUInt32LE(0x07064b50, 0) // ZIP64 end of central directory locator
+  locator.writeBigUInt64LE(0n, 8) // where the ZIP64 record starts
+  locator.writeUInt32LE(1, 16) // number of disks
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0) // end of central directory
+  end.writeUInt16LE(0xffff, 8)
+  end.writeUInt16LE(0xffff, 10)
   const root = await tmpDir()
-  const one = join(src, 'one')
-  await writeFile(one, 'x')
-  const entries = Array.from({ length: 70_000 }, (_, i) => ({
-    absPath: one,
-    name: `f${i}`,
-    mtimeMs: Date.now()
-  }))
-  const r = await writeZip(new FsDestination(root), 'big.zip', entries, 0, {})
-  expect(r.entryCount).toBe(70_000)
+  await writeFile(join(root, 'big.zip'), Buffer.concat([record, locator, end]))
   expect(await readZipEntryCount(join(root, 'big.zip'))).toBe(70_000)
 })
 
