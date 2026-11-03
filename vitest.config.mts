@@ -8,6 +8,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
-    env: { TZ: 'Europe/Rome' }
+    env: { TZ: 'Europe/Rome' },
+    // Engine tests zip and copy real files; shared CI runners can be several times slower.
+    testTimeout: 30_000
   }
 })
