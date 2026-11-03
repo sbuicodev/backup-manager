@@ -1,5 +1,7 @@
 import type { Config, Settings } from '@shared/schema'
-import type { JobRequest, RunStatus, SchedulerStatus } from '@shared/types'
+import { formatAgo } from '@shared/time'
+import type { JobRequest, PairResult, RunStatus, SchedulerStatus } from '@shared/types'
+import { targets } from './engine/planner'
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const pad = (n: number): string => String(n).padStart(2, '0')
@@ -100,4 +102,36 @@ export function windowMaterial(
   if (platform === 'darwin') return { vibrancy: glass ? 'under-window' : null }
   if (platform === 'win32') return { backgroundMaterial: glass ? 'acrylic' : 'none' }
   return {}
+}
+
+/** One tray line per backup: "Documents — backed up 2 hours ago", "Photos — waiting for USB stick". */
+export function trayBackupLines(
+  config: Config,
+  results: PairResult[],
+  status: SchedulerStatus,
+  now: Date
+): Array<{ id: string; label: string }> {
+  return config.sources.map((s) => {
+    const dests = config.destinations.filter((d) => targets(s, d))
+    const mine = results
+      .filter((r) => r.sourceId === s.id && dests.some((d) => d.id === r.destId))
+      .sort((a, b) => (a.endedAt < b.endedAt ? 1 : -1))
+    const retry = status.pendingRetries.find((r) => r.sourceId === s.id)
+    const waitingFor = retry && config.destinations.find((d) => d.id === retry.destId)?.name
+    const lastOk = mine.find(
+      (r) => r.status === 'completed' || r.status === 'completed-with-warnings'
+    )
+    const state = !s.setupComplete
+      ? 'not set up'
+      : !s.enabled
+        ? 'paused'
+        : waitingFor
+          ? `waiting for ${waitingFor}`
+          : mine.some((r) => r.status === 'failed')
+            ? 'failed'
+            : lastOk
+              ? `backed up ${formatAgo(new Date(lastOk.endedAt), now)}`
+              : 'not backed up yet'
+    return { id: s.id, label: `${s.name} — ${state}` }
+  })
 }

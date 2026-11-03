@@ -4,6 +4,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  Menu,
   nativeTheme,
   powerMonitor,
   powerSaveBlocker,
@@ -11,7 +12,7 @@ import {
 } from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { CH, type Screen } from '@shared/ipc'
-import type { JobRequest, ProgressEvent } from '@shared/types'
+import type { JobRequest, PairResult, ProgressEvent } from '@shared/types'
 import icon from '../../resources/icon.png?asset'
 import { createHandlers } from './handlers'
 import { registerIpc } from './ipc'
@@ -25,6 +26,7 @@ let quitting = false
 let services: Services | null = null
 let blockerId: number | null = null
 let currentJob: JobRequest | null = null
+let latest: PairResult[] = []
 
 function send(channel: string, ...payload: unknown[]): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...payload)
@@ -44,6 +46,36 @@ function showWindow(): void {
 function dialogParent(): BrowserWindow {
   if (!mainWindow || mainWindow.isDestroyed()) createWindow()
   return mainWindow!
+}
+
+/** Shows the window with one backup selected (from the tray). */
+function select(id: string): void {
+  showWindow()
+  const go = (): void => send(CH.select, { kind: 'backup', id })
+  if (mainWindow?.webContents.isLoading()) mainWindow.webContents.once('did-finish-load', go)
+  else go()
+}
+
+/** macOS app menu: the usual items plus Settings… (⌘,). */
+function appMenu(): Menu {
+  return Menu.buildFromTemplate([
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { label: 'Settings…', accelerator: 'Cmd+,', click: () => navigate('settings') },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    { role: 'editMenu' },
+    { role: 'windowMenu' }
+  ])
 }
 
 function navigate(screen: Screen, arg?: string): void {
@@ -160,6 +192,12 @@ if (!app.requestSingleInstanceLock()) {
         if (channel === CH.progress) onProgress(payload as ProgressEvent)
         send(channel, payload)
         if (channel === CH.status || channel === CH.progress) tray?.refresh()
+        if (channel === CH.progress && (payload as ProgressEvent).type === 'run-end') {
+          void svc.latestResults().then((r) => {
+            latest = r
+            tray?.refresh()
+          })
+        }
       },
       onRunFinished: (log) =>
         notifyRunFinished(svc.config().settings.notifications, log, () =>
@@ -246,11 +284,16 @@ if (!app.requestSingleInstanceLock()) {
       scheduler: svc.scheduler,
       getConfig: () => svc.config(),
       currentJob: () => currentJob,
+      results: () => latest,
+      showBackup: (id) => select(id),
       open: showWindow,
       quit: () => app.quit()
     })
 
     await svc.start()
+    latest = await svc.latestResults()
+    tray.refresh()
+    if (process.platform === 'darwin') Menu.setApplicationMenu(appMenu())
 
     if (startedHidden()) {
       if (process.platform === 'darwin') app.dock?.hide()

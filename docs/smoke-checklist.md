@@ -6,11 +6,22 @@ Use a throwaway profile by launching with `BM_USER_DATA=/tmp/bm-smoke` when poss
 ## App lifecycle
 
 - [ ] Tray / menu-bar icon appears; on macOS it follows light/dark menu bar.
-- [ ] Tray menu shows a status line, Run all now, Pause (1 hour / until resumed) or Resume, Open, Quit.
+- [ ] Tray menu shows a status line, one line per backup ("Documents — backed up 2 hours ago"; clicking one opens the window on it), Run all now, Cancel while running, Pause (1 hour / until resumed) or Resume, Open, Quit.
 - [ ] Closing the window keeps the app in the tray; "Open" brings it back; Quit exits.
 - [ ] Launching the app a second time focuses the existing window (single instance).
 - [ ] Launch at login ON: after logging out/in the app starts hidden in the tray.
       Linux: `~/.config/autostart/backup-manager.desktop` exists; turning the setting OFF removes it.
+
+## Window
+
+- [ ] New backup: Add… picks files and folders together (macOS); Add folder… / Add files… (Windows, Linux); dropping files and folders from Finder/Explorer adds them.
+- [ ] Other folder… in the assistant picks a folder and makes it a drive for that backup only.
+- [ ] Create backup starts the first run (not for manual-only); Set up later leaves a "Not set up" backup that never runs.
+- [ ] Edit, change a field, select another backup: Save / Don't save / Cancel prompt; quitting with unsaved changes shows Discard changes / Cancel.
+- [ ] Right-click a backup: Back up now, Pause, Duplicate, Show in Finder (Explorer), Delete; right-click a Where row: Show in Finder opens that backup's folder on the drive.
+- [ ] Drive page shows free space; Check now on a waiting drive checks immediately.
+- [ ] Settings opens with ⌘, on macOS and from the sidebar gear.
+- [ ] Windows: the native window buttons sit in the top bar and the layout matches macOS; Linux likewise.
 
 ## Backups
 

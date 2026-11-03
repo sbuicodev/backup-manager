@@ -8,6 +8,7 @@ import {
   titleBarOptions,
   titleBarOverlay,
   trayActions,
+  trayBackupLines,
   trayStatusLine,
   windowMaterial
 } from '../../src/main/os-helpers'
@@ -163,5 +164,40 @@ describe('windowMaterial', () => {
     expect(windowMaterial('darwin', false)).toEqual({ vibrancy: null })
     expect(windowMaterial('win32', false)).toEqual({ backgroundMaterial: 'none' })
     expect(windowMaterial('linux', false)).toEqual({})
+  })
+})
+
+describe('trayBackupLines', () => {
+  const at = new Date(2026, 10, 3, 15, 0)
+  test('one line per backup, saying how it is doing', () => {
+    const c = cfg()
+    c.destinations.push({ ...newDestination('/usb', 'USB stick'), id: 'd2' })
+    c.sources.push({
+      ...newSource('/c', 'Tax', ['Documents', 'Photos']),
+      id: 's3',
+      setupComplete: false
+    })
+    c.sources.push({
+      ...newSource('/d', 'Old', ['Documents', 'Photos', 'Tax']),
+      id: 's4',
+      enabled: false
+    })
+    const results = [
+      {
+        sourceId: 's1',
+        destId: 'd1',
+        runId: 'r',
+        endedAt: new Date(2026, 10, 3, 13, 0).toISOString(),
+        status: 'completed' as const,
+        bytesWritten: 0
+      }
+    ]
+    const st = idle({ pendingRetries: [{ sourceId: 's2', destId: 'd2', nextRetryAt: null }] })
+    expect(trayBackupLines(c, results, st, at)).toEqual([
+      { id: 's1', label: 'Documents — backed up 2 hours ago' },
+      { id: 's2', label: 'Photos — waiting for USB stick' },
+      { id: 's3', label: 'Tax — not set up' },
+      { id: 's4', label: 'Old — paused' }
+    ])
   })
 })

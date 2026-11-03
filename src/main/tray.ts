@@ -1,14 +1,18 @@
 import { join } from 'node:path'
 import { app, Menu, nativeImage, Tray } from 'electron'
 import type { Config } from '@shared/schema'
-import type { JobRequest } from '@shared/types'
+import type { JobRequest, PairResult } from '@shared/types'
 import type { Scheduler } from './scheduler/scheduler'
-import { trayActions, trayStatusLine, type TrayAction } from './os-helpers'
+import { trayActions, trayBackupLines, trayStatusLine, type TrayAction } from './os-helpers'
 
 export type TrayDeps = {
   scheduler: Scheduler
   getConfig(): Config
   currentJob(): JobRequest | null
+  /** Newest result per backup × drive, kept current by the caller. */
+  results(): PairResult[]
+  /** Shows the window with this backup selected. */
+  showBackup(id: string): void
   open(): void
   quit(): void
 }
@@ -45,6 +49,13 @@ export function createTray(deps: TrayDeps): { refresh(): void; destroy(): void }
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: line, enabled: false },
+        { type: 'separator' },
+        ...trayBackupLines(deps.getConfig(), deps.results(), status, new Date()).map(
+          (l): Electron.MenuItemConstructorOptions => ({
+            label: l.label,
+            click: () => deps.showBackup(l.id)
+          })
+        ),
         { type: 'separator' },
         ...trayActions(status).map((a) => items[a]),
         { type: 'separator' },

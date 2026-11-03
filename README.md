@@ -5,7 +5,7 @@ destination folders: an external drive, a NAS share, or a cloud folder synced by
 (OneDrive, Dropbox, iCloud Drive…). It runs from the menu bar / system tray, on a schedule, and
 copes with laptops: missed runs catch up, unplugged drives are retried, interrupted runs recover.
 
-![Sources](docs/screenshots/sources.png)
+![A backup's page](docs/screenshots/backup.png)
 
 - **Per-folder options.** Each source is mirrored (one up-to-date copy) or snapshotted (a dated
   copy per run), and stored as plain files, one zip, or one zip per top-level item.
@@ -51,100 +51,101 @@ The builds are not code-signed:
 
 ## Usage
 
-### 1. Add destinations
+The window has one sidebar: your **backups** (each with a status dot), your **drives**, and
+**Activity**. Select something to see it on the right. **Back up now** in the top bar runs every
+backup; hovering it shows what it would do ("Will copy 3 files (156 KB) · 1 drive not connected").
 
-A destination is a folder that already exists: a folder on an external drive, a mounted NAS share,
-or your OneDrive folder. The dot shows whether it is reachable right now.
+### 1. Create a backup
 
-![Destinations](docs/screenshots/destinations.png)
+Click **New backup** at the bottom of the sidebar. Three steps:
 
-Backup Manager never creates a destination folder itself. If a drive is unplugged, its mount point
-is missing and the backup is skipped instead of filling up your internal disk.
+1. **What to back up**: files and folders from anywhere. On macOS **Add…** picks both at once; on
+   Windows and Linux use **Add folder…** and **Add files…**. You can also drop them from
+   Finder or Explorer.
+2. **Where it goes**: pick one or more drives, or **Other folder…** for a folder used by this
+   backup only.
+3. **How and when**: keep an up-to-date copy (a mirror) or dated versions, run every day at 22:00,
+   every 4 hours, or only when you click Back up now.
 
-Each destination can cap zip part sizes (for example 4095 MB on a FAT32 drive) and force big files
-to be split into chunks.
+![New backup](docs/screenshots/new-backup.png)
 
-### 2. Add sources
+**Create backup** saves it and starts its first run. **Set up later**, on any step, keeps what you
+entered as a backup marked **Not set up**: it never runs until you open it, click
+**Finish setting up**, and save it with at least one item and one drive.
 
-A source is a list of files and folders to back up together, with one name, schedule and set of
-destinations. Click **Add source**, add files and folders (on macOS one **Add…** picks both; on
-Windows and Linux use **Add folder…** and **Add files…**), and choose how to store them. Each file
-or folder is stored under its own name, so two in one source can't share a name.
+A drive is a folder that already exists: on an external drive, a NAS share, or your OneDrive
+folder. Backup Manager never creates it, so an unplugged drive is skipped instead of filling up
+your internal disk. Add one with the **+** next to **Drives**.
 
-![Source editor](docs/screenshots/source-editor.png)
+### 2. See what goes where
 
-**Packaging**
+A backup's page shows **What** it holds and **Where** it goes, with each drive's own status
+("2 hours ago", "waiting · next check 15:40" with **Check now**, "failed · disk full"). Right-click
+a drive row to open that backup's folder in Finder or Explorer. **Last run** opens it in Activity.
 
-| Option        | Result at the destination                                                                                                |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Copy files    | The files themselves, easy to browse                                                                                     |
-| One zip       | Everything in one archive                                                                                                |
-| Zip each item | Inside each folder, one archive per entry (its loose files individually or in `_files.zip`); one archive per listed file |
+![A backup's page](docs/screenshots/backup.png)
 
-**Mode**
+A drive's page shows whether it is connected, its free space, and every backup that goes to it.
+**Send another backup here** adds one in a click.
 
-- **Mirror** keeps one up-to-date copy and writes only what changed. When a file is deleted from
-  the source, the backup either moves it to `.trash` (default, emptied after the days you choose),
-  deletes it, or keeps it.
-- **Snapshots** write a new dated copy on every run. Retention always keeps at least N snapshots and
-  can delete those older than X days.
+![A drive's page](docs/screenshots/drive.png)
 
-**Split archives larger than** turns on zip parts: an archive over the limit becomes
-`Photos.part1.zip`, `Photos.part2.zip`, … and each opens on its own. A file bigger than the limit
-either gets a part of its own or is cut into raw chunks (`.001`, `.002`, …). In mirror mode files
-stay in the part they are already in, so one changed photo rewrites, and re-uploads, only one part.
+### 3. Change a backup
 
-Each source also has **exclusions** (glob patterns such as `*.tmp` or `node_modules/`, on top of
-the global ones in Settings), its **destinations** (all, or a selection) and a **schedule**: manual
-only, every few hours, daily, or weekly on chosen days.
+Click **Edit**. Every setting is on one page, grouped like System Settings; nothing is saved until
+you click **Save**, and leaving with unsaved changes asks first.
 
-What lands where, for a source with folder name `S` holding a folder `Photos` and a file
+![Editing a backup](docs/screenshots/backup-edit.png)
+
+- **Where**: all shared drives or a selection, plus drives used by this backup only.
+- **Schedule**: every few hours, every day, every week, or only when you click Back up now; and
+  whether to retry when an unplugged drive comes back.
+- **Versions**: an up-to-date copy (mirror) or dated versions, keeping at least N and deleting
+  those older than X days.
+- **Deletions** (mirror): a file deleted from your source goes to the backup's `.trash` (emptied
+  after the days you choose), is deleted, or stays.
+- **Exclusions**: patterns such as `*.tmp` or `node_modules/`, on top of the global ones.
+- **Zip**: plain files, one zip, or a zip per item, with compression and an optional size limit
+  that splits big archives into parts that each open on their own.
+
+What lands where, for a backup with folder name `S` holding a folder `Photos` and a file
 `tax.pdf`:
 
-| Mode     | Copy files                                  | One zip                   | Zip each item                                             |
+| Keep     | Plain files                                 | One zip                   | A zip per item                                            |
 | -------- | ------------------------------------------- | ------------------------- | --------------------------------------------------------- |
-| Mirror   | `S/Photos/…`, `S/tax.pdf`                   | `S/S.zip`                 | `S/Photos/<entry>.zip`, `S/tax.pdf.zip`                   |
-| Snapshot | `S/2026-10-26_154307/Photos/…`, `…/tax.pdf` | `S/2026-10-26_154307.zip` | `S/2026-10-26_154307/Photos/<entry>.zip`, `…/tax.pdf.zip` |
+| Copy     | `S/Photos/…`, `S/tax.pdf`                   | `S/S.zip`                 | `S/Photos/<entry>.zip`, `S/tax.pdf.zip`                   |
+| Versions | `S/2026-10-26_154307/Photos/…`, `…/tax.pdf` | `S/2026-10-26_154307.zip` | `S/2026-10-26_154307/Photos/<entry>.zip`, `…/tax.pdf.zip` |
 
 A mirror also keeps a few hidden items of its own in `S/`: `.trash/` for removed files,
-`.backup-manager.json` (zip mirrors) and `.backup-manager-layout`. A file or folder in your
-source named like one of those is skipped with a warning. Mirror backups made by earlier versions
-(in `S/current/`, or a folder's contents directly in `S/`) are moved into `S/<folder>/` on their
-next run, by renaming only; zip mirrors are rebuilt once.
+`.backup-manager.json` (zip mirrors) and `.backup-manager-layout`. Mirror backups made by earlier
+versions are moved into this layout on their next run, by renaming only; zip mirrors are rebuilt
+once.
 
-### 3. Preview and run
-
-The **Run** screen previews what a backup will do before it does it: new and changed files, files
-going to the trash, archives to rewrite, and destinations that are not available.
-
-![Run preview](docs/screenshots/run-preview.png)
-
-**Run all** (or the ▶ button on a source) starts a backup with live progress and a Cancel button.
-When it ends, expand any job to see the exact files it changed, with filters and search. For zip
-backups the last column names the part that holds each file.
-
-![Run result](docs/screenshots/run-result.png)
+Right-click a backup in the sidebar to back it up now, pause it, duplicate it, show it in Finder,
+or delete it.
 
 ### 4. Let it run on schedule
 
-Close the window and Backup Manager keeps running in the menu bar / system tray. Its menu shows the
-status and offers Run all now, Cancel, Pause (for 1 hour or until resumed) and Quit. Turn on
-**Launch at login** in Settings to have it start hidden when you log in.
+Close the window and Backup Manager keeps running in the menu bar / system tray. Its menu shows a
+line per backup ("Documents — backed up 2 hours ago", "Photos — waiting for USB stick"; click one
+to open it), plus Run all now, Cancel, Pause and Quit. Turn on **Launch at login** in Settings to
+have it start hidden when you log in.
 
 - **Missed runs** (the computer was off or asleep) run once as soon as the app is running again.
 - **A missing drive** is skipped and retried when it comes back: checks happen 1, 2, 3, 4 and
   5 minutes after the skip, then every 5 minutes, and right away when the computer wakes up or is
-  plugged in. The top bar and the Sources list show "Waiting for USB stick · next check in N min".
+  plugged in.
 - **Interrupted runs** (crash, forced shutdown, lid closed for good) are run again on the next
   start; leftover half-written files are cleaned up first.
 - **Skip scheduled runs on battery** makes due backups wait until the computer is plugged in.
 
-### 5. Check the history
+### 5. Activity
 
-**History** lists the last 200 runs with what started them (manual, scheduled, catch-up, retry,
-recovery). Open a run to see each job and expand it for its file changes.
+**Activity** lists runs by day, with what started them when it was not you (scheduled, catch-up,
+retry, recovery). Click a backup → drive row to see the files it changed, with filters and search;
+filter the list to one backup or one drive. A running backup shows its progress at the top.
 
-![History](docs/screenshots/history-detail.png)
+![Activity](docs/screenshots/activity.png)
 
 ### Restoring
 
@@ -159,7 +160,7 @@ Copy the files back from the destination, or open the zips with your system's ar
 
 ### Settings and data
 
-Settings holds launch at login, notifications (after every run, only failures and warnings, or never),
+Settings (the gear at the bottom of the sidebar, or ⌘, on macOS) holds launch at login, notifications (after every run, only failures and warnings, or never),
 battery behaviour, global exclusions, and **Export…/Import…** of the whole configuration. It also
 shows where the configuration file lives; run history, scheduler state and change logs sit next to
 it in the app's data folder.

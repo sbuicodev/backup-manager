@@ -48,20 +48,3 @@ export function checkClock(nextRetryAt: string | null, now: Date): string {
   const d = new Date(nextRetryAt)
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
-
-/** Outcome text for a job skipped or lost because its destination was unavailable. */
-export function jobOutcomeText(
-  reason: string | undefined,
-  destName: string,
-  retry: { nextRetryAt: string | null } | null,
-  now: Date
-): string | null {
-  const base =
-    reason === 'destination-missing'
-      ? `${destName} not available`
-      : reason === 'destination-lost'
-        ? `${destName} disconnected during backup`
-        : null
-  if (base === null) return null
-  return retry ? `${base} · retrying, next check ${checkClock(retry.nextRetryAt, now)}` : base
-}

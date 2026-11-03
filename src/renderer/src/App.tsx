@@ -39,7 +39,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { buildNextConfig, draftFrom, errorsByGroup, isDirty, type Draft } from '@/lib/backup-draft'
 import { Settings } from '@/screens/Settings'
-import { Sources } from '@/screens/Sources'
+import { NewBackupAssistant } from '@/screens/NewBackupAssistant'
 
 /** Back up now, or Stop while a run is active; hovering previews what a run would do. */
 function BackUpNowButton({ running }: { running: boolean }): React.JSX.Element {
@@ -369,7 +369,14 @@ function App(): React.JSX.Element {
                     }}
                   />
                 )}
-                {selection.kind === 'new' && <Sources cfg={cfg} config={config} status={status} />}
+                {selection.kind === 'new' && (
+                  <NewBackupAssistant
+                    cfg={cfg}
+                    config={config}
+                    availability={availability}
+                    onDone={(id) => go({ kind: 'backup', id })}
+                  />
+                )}
                 {selection.kind === 'drive' && (
                   <DrivePage
                     cfg={cfg}
