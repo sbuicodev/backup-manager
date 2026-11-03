@@ -39,9 +39,8 @@ jobs:
 
       - run: npm ci
 
-      # The suite runs once, on macOS, where it's developed.
+      # Each installer is built only after the suite passes on its own platform.
       - name: Test
-        if: runner.os == 'macOS'
         run: npm test
 
       - name: Build
