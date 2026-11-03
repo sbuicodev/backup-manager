@@ -25,9 +25,12 @@ extraResources:
 win:
   executableName: backup-manager
   target:
-    - nsis
+    # x64 is Intel and AMD PCs; it also runs on Windows on ARM through emulation.
+    - target: nsis
+      arch:
+        - x64
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  artifactName: ${name}-${version}-${arch}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always

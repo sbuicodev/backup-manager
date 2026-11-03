@@ -265,7 +265,10 @@ if (!app.requestSingleInstanceLock()) {
     let launchAtLogin = svc.config().settings.launchAtLogin
     void setLaunchAtLogin(launchAtLogin)
     let glass = svc.config().settings.glass
+    // The page's colours, the macOS vibrancy and the window controls all follow this.
+    nativeTheme.themeSource = svc.config().settings.theme
     svc.onConfigChange((c) => {
+      nativeTheme.themeSource = c.settings.theme
       if (c.settings.glass !== glass) {
         glass = c.settings.glass
         if (mainWindow && !mainWindow.isDestroyed()) applyMaterial(mainWindow)

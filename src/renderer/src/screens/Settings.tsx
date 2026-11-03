@@ -1,6 +1,6 @@
 import { t } from '@/i18n'
 import { useState } from 'react'
-import { Download, Upload } from 'lucide-react'
+import { Download, Monitor, Moon, Sun, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Config, Settings as SettingsT } from '@shared/schema'
 import { Group, Row } from '@/components/BackupForm'
@@ -17,6 +17,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
 import type { UseConfig } from '@/hooks/useConfig'
+import { cn } from '@/lib/utils'
 
 /** The app's settings, in a sheet laid out like a backup's configuration. Changes save at once. */
 export function Settings({
@@ -65,6 +66,33 @@ export function Settings({
     >
       <div className="grid gap-6">
         <Group title={t('settings.appearance')} id="appearance">
+          <Row label={t('settings.theme')}>
+            <div className="bg-muted/60 flex gap-0.5 rounded-lg p-0.5">
+              {(['system', 'light', 'dark'] as const).map((theme) => (
+                <button
+                  key={theme}
+                  type="button"
+                  aria-pressed={config.settings.theme === theme}
+                  onClick={() => void setSetting('theme', theme)}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                    config.settings.theme === theme
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {theme === 'system' ? (
+                    <Monitor className="size-3.5" />
+                  ) : theme === 'light' ? (
+                    <Sun className="size-3.5" />
+                  ) : (
+                    <Moon className="size-3.5" />
+                  )}
+                  {t(`settings.themes.${theme}`)}
+                </button>
+              ))}
+            </div>
+          </Row>
           <Row label={t('settings.glass')} hint={t('settings.glassHint')}>
             <Switch
               checked={config.settings.glass}

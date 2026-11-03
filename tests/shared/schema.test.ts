@@ -37,7 +37,8 @@ describe('schema', () => {
       launchAtLogin: true,
       notifications: 'problems',
       skipScheduledOnBattery: false,
-      glass: true
+      glass: true,
+      theme: 'system'
     })
   })
 
@@ -523,4 +524,15 @@ describe('item aliases', () => {
       ]).ok
     ).toBe(false)
   })
+})
+
+test('the theme follows the system by default; older settings without it still load', () => {
+  expect(defaultConfig().settings.theme).toBe('system')
+  const c = defaultConfig() as unknown as { settings: Record<string, unknown> }
+  delete c.settings.theme
+  const r = validateConfig(c)
+  expect(r.ok && r.config.settings.theme).toBe('system')
+  const dark = defaultConfig()
+  dark.settings.theme = 'dark'
+  expect(validateConfig(dark).ok).toBe(true)
 })

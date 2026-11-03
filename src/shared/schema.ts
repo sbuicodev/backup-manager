@@ -37,7 +37,9 @@ export const SettingsSchema = z.object({
   notifications: z.enum(['problems', 'always', 'never']),
   skipScheduledOnBattery: z.boolean(),
   /** Frosted glass appearance. Earlier builds stored a level name: any level but 'off' means on. */
-  glass: z.preprocess((v) => (typeof v === 'string' ? v !== 'off' : v), z.boolean().default(true))
+  glass: z.preprocess((v) => (typeof v === 'string' ? v !== 'off' : v), z.boolean().default(true)),
+  /** Light, dark, or whatever the system uses. */
+  theme: z.enum(['system', 'light', 'dark']).default('system')
 })
 
 /** Smallest allowed zip part limit or chunk size: 1 MiB. */
@@ -296,7 +298,8 @@ export function defaultConfig(): Config {
       launchAtLogin: true,
       notifications: 'problems',
       skipScheduledOnBattery: false,
-      glass: true
+      glass: true,
+      theme: 'system'
     },
     destinations: [],
     sources: []

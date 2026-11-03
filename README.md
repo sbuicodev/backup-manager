@@ -39,7 +39,7 @@ Then build for the system you are on (each installer is built on its own OS):
 | System  | Command               | Output in `dist/`                    |
 | ------- | --------------------- | ------------------------------------ |
 | macOS   | `npm run build:mac`   | `backup-manager-<version>.dmg`       |
-| Windows | `npm run build:win`   | `backup-manager-<version>-setup.exe` |
+| Windows | `npm run build:win`   | `backup-manager-<version>-x64-setup.exe` (64-bit Intel/AMD; builds on a Mac too) |
 | Linux   | `npm run build:linux` | `.AppImage` and `.deb`               |
 
 The builds are not code-signed:

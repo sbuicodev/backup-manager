@@ -127,7 +127,8 @@
 html.glass {
   --glass-chrome: 45%; /* sidebar and top bar opacity */
   --glass-page: 70%; /* main area opacity */
-  --glass-card: 55%; /* cards, dialogs, menus */
+  --glass-card: 55%; /* cards, menus */
+  --glass-dialog: 97%; /* sheets and dialogs: nearly solid, so the page never shows through */
 }
 html.glass-native,
 html.glass-native body,
@@ -142,13 +143,31 @@ html.glass-native main {
   background: color-mix(in oklch, var(--background) var(--glass-page), transparent);
 }
 html.glass [data-slot='card'],
-html.glass [data-slot='dialog-content'],
-html.glass [data-slot='alert-dialog-content'],
-html.glass [data-slot='sheet-content'],
 html.glass [data-slot='popover-content'],
 html.glass [data-slot='dropdown-menu-content'],
 html.glass [data-slot='select-content'] {
   background-color: color-mix(in oklch, var(--card) var(--glass-card), transparent);
   border-color: oklch(1 0 0 / 8%);
   backdrop-filter: blur(16px) saturate(1.5);
+}
+
+/* Sheets and dialogs sit over busy pages: keep them nearly solid so nothing behind reads through. */
+html.glass [data-slot='dialog-content'],
+html.glass [data-slot='alert-dialog-content'],
+html.glass [data-slot='sheet-content'] {
+  background-color: color-mix(in oklch, var(--background) var(--glass-dialog), transparent);
+  /* No blur of its own: a filtered layer renders its text soft. The overlay blurs the page. */
+}
+
+/*
+ * Behind any modal the app itself is blurred (modals render outside #root, so they stay sharp).
+ * Blurring the content directly works over the see-through glass window too, where a backdrop
+ * blur on the overlay leaves text half-sharp.
+ */
+#root {
+  transition: filter 150ms ease-out;
+}
+body:has([data-slot='dialog-overlay'], [data-slot='alert-dialog-overlay'], [data-slot='sheet-overlay'])
+  #root {
+  filter: blur(8px);
 }

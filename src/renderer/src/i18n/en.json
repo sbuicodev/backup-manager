@@ -191,7 +191,11 @@
     "history": "History"
   },
   "assistant": {
-    "steps": ["What to back up", "Where it goes", "How and when"],
+    "steps": [
+      "What to back up",
+      "Where it goes",
+      "How and when"
+    ],
     "step": "Step {{n}} of {{total}}",
     "createFailed": "Couldn’t create the backup",
     "otherFolder": "New Destination…",
@@ -319,7 +323,13 @@
     "import": "Import…",
     "done": "Done",
     "excludesLabel": "Skip in every backup",
-    "location": "Saved at"
+    "location": "Saved at",
+    "theme": "Theme",
+    "themes": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    }
   },
   "destination": {
     "edit": "Edit Destination",
