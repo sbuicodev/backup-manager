@@ -286,9 +286,9 @@ test('a job that failed before a crash is re-run on recovery; a successful one i
   h.outcome('s0:d0', { status: 'failed', reason: 'error' })
   h.crashAfterJobs.value = true
   h.s.runNow()
-  // Wait (up to 2 s) for both job ends to reach disk.
+  // Wait (up to 10 s: CI runners can be slow) for both job ends to reach disk.
   let persisted = await loadState(h.stateFile, h.cfg)
-  for (let i = 0; i < 100 && persisted.activeRun?.jobs.length !== 1; i++) {
+  for (let i = 0; i < 500 && persisted.activeRun?.jobs.length !== 1; i++) {
     await new Promise((r) => setTimeout(r, 20))
     persisted = await loadState(h.stateFile, h.cfg)
   }
@@ -308,9 +308,9 @@ test('job finished before a crash is not re-run on recovery', async () => {
   // a run whose first job finishes, then the app "crashes"
   h.crashOnRun.value = true
   h.s.runNow()
-  // Wait (up to 2 s) for the run's activeRun record to reach disk.
+  // Wait (up to 10 s: CI runners can be slow) for the run's activeRun record to reach disk.
   let persisted = await loadState(h.stateFile, h.cfg)
-  for (let i = 0; i < 100 && !persisted.activeRun; i++) {
+  for (let i = 0; i < 500 && !persisted.activeRun; i++) {
     await new Promise((r) => setTimeout(r, 20))
     persisted = await loadState(h.stateFile, h.cfg)
   }

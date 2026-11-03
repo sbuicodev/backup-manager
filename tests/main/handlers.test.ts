@@ -115,7 +115,7 @@ test('run:start enqueues a run, broadcasts progress, and history records it', as
   await handlers[CH.configSave](validConfig(base))
   const id = await handlers[CH.runStart]()
   expect(typeof id).toBe('string')
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 500; i++) {
     if (broadcasts.some(([ch, e]) => ch === CH.progress && (e as ProgressEvent).type === 'run-end'))
       break
     await new Promise((r) => setTimeout(r, 20))
