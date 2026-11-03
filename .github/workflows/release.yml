@@ -1,0 +1,70 @@
+name: Release
+
+# Pushing a version tag (v1.0.0, v1.2.3, …) builds the installers and attaches them to a GitHub
+# release for that tag: macOS on Apple silicon, Windows on x64 and on ARM.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Apple silicon)
+            os: macos-latest
+            build: npm run build:mac -- --arm64 --publish never
+          - name: Windows (x64)
+            os: windows-latest
+            build: npx electron-vite build && npx electron-builder --win --x64 --publish never
+          - name: Windows (ARM)
+            os: windows-latest
+            build: npx electron-vite build && npx electron-builder --win --arm64 --publish never
+    env:
+      # The builds aren't code-signed: don't look for a certificate.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The suite runs once, on macOS, where it's developed.
+      - name: Test
+        if: runner.os == 'macOS'
+        run: npm test
+
+      - name: Build
+        run: ${{ matrix.build }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
