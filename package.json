@@ -18,6 +18,7 @@
     "postinstall": "install-electron && electron-builder install-app-deps && node scripts/dev-app-name.mjs",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win --x64",
+    "build:win:arm64": "npm run build && electron-builder --win --arm64",
     "build:mac": "electron-vite build && DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
     "test": "vitest run",
