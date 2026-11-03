@@ -4,6 +4,7 @@
   "description": "Cross-platform folder backup manager",
   "main": "./out/main/index.js",
   "author": "Stefano",
+  "license": "GPL-3.0-only",
   "homepage": "https://electron-vite.org",
   "scripts": {
     "format": "prettier --write .",
