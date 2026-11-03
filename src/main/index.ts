@@ -163,6 +163,12 @@ function onProgress(e: ProgressEvent): void {
   if (e.type === 'run-end') currentJob = null
 }
 
+// The name in menus, the Dock and dialogs. The settings folder keeps the path it had before
+// (development runs used the package name), so nothing already saved goes missing.
+const userData = app.getPath('userData')
+app.setName('Backup Manager')
+app.setPath('userData', userData)
+
 // Lets a dev/test run use a throwaway profile instead of the real one.
 if (process.env.BM_USER_DATA) app.setPath('userData', process.env.BM_USER_DATA)
 

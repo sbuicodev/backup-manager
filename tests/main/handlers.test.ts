@@ -240,7 +240,7 @@ test("history:changes returns the run's file changes, filtered and paged", async
     destId: cfg.destinations[0].id
   })) as ChangePage
   expect(page.total).toBe(1)
-  expect(page.items[0]).toMatchObject({ action: 'added', path: 'src/a.txt', size: 1 })
+  expect(page.items[0]).toMatchObject({ action: 'added', path: 'a.txt', size: 1 })
   const none = (await handlers[CH.historyChanges](id, {
     sourceId: cfg.sources[0].id,
     destId: cfg.destinations[0].id,
@@ -325,7 +325,7 @@ test('snapshot runs through services record a diff against the previous snapshot
     sourceId: cfg.sources[0].id,
     destId: cfg.destinations[0].id
   })) as ChangePage
-  expect(page.items.map((i) => [i.action, i.path])).toEqual([['added', 'src/b.txt']])
+  expect(page.items.map((i) => [i.action, i.path])).toEqual([['added', 'b.txt']])
   await stop()
 })
 

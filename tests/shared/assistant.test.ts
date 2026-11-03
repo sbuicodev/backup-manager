@@ -18,7 +18,7 @@ const state = (extra: Partial<AssistantState> = {}): AssistantState => ({
 })
 
 test('create: named after the first item, the chosen drives, mirror every day at 22:00', () => {
-  const { next, sourceId } = assistantConfig(world(), state(), true)
+  const { next, sourceId } = assistantConfig(world(), state())
   const s = next.sources.find((x) => x.id === sourceId)!
   expect(s).toMatchObject({
     name: 'Documents',
@@ -34,27 +34,11 @@ test('create: named after the first item, the chosen drives, mirror every day at
 
 test('versions every 4 hours; manual only; a new folder becomes a drive for this backup only', () => {
   const own = { ...newDestination('/Volumes/SSD/backups', 'backups'), id: 'd9' }
-  const a = assistantConfig(
-    world(),
-    state({ mode: 'snapshot', run: 'interval', newDrives: [own] }),
-    true
-  )
+  const a = assistantConfig(world(), state({ mode: 'snapshot', run: 'interval', newDrives: [own] }))
   const s = a.next.sources.find((x) => x.id === a.sourceId)!
   expect(s.mode).toBe('snapshot')
   expect(s.schedule).toEqual({ kind: 'interval', everyHours: 4 })
   expect(a.next.destinations.find((d) => d.id === 'd9')?.ownerSourceId).toBe(a.sourceId)
-  const b = assistantConfig(world(), state({ run: 'manual' }), true)
+  const b = assistantConfig(world(), state({ run: 'manual' }))
   expect(b.next.sources.find((x) => x.id === b.sourceId)!.schedule).toBeNull()
-})
-
-test('set up later keeps whatever was entered, even nothing, as not set up', () => {
-  const { next, sourceId } = assistantConfig(world(), state({ items: [], driveIds: [] }), false)
-  const s = next.sources.find((x) => x.id === sourceId)!
-  expect(s).toMatchObject({
-    name: 'New backup',
-    items: [],
-    destinationIds: [],
-    setupComplete: false
-  })
-  expect(validateConfig(next).ok).toBe(true)
 })

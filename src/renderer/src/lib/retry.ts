@@ -1,3 +1,4 @@
+import { t } from '@/i18n'
 import type { Config } from '@shared/schema'
 import type { SchedulerStatus } from '@shared/types'
 
@@ -12,11 +13,13 @@ export function retryFor(
 
 export function nextCheckIn(nextRetryAt: string | null, now: Date): string {
   const ms = nextRetryAt === null ? 0 : new Date(nextRetryAt).getTime() - now.getTime()
-  return ms <= 0 ? 'next check now' : `next check in ${Math.max(1, Math.round(ms / 60_000))} min`
+  return ms <= 0
+    ? t('retry.checkNow')
+    : t('retry.checkIn', { count: Math.max(1, Math.round(ms / 60_000)) })
 }
 
 export function waitingText(destName: string, nextRetryAt: string | null, now: Date): string {
-  return `Waiting for ${destName} · ${nextCheckIn(nextRetryAt, now)}`
+  return t('retry.waitingFor', { name: destName, check: nextCheckIn(nextRetryAt, now) })
 }
 
 const time = (iso: string | null, now: Date): number =>
@@ -36,15 +39,17 @@ export function headerRetryText(
     .flatMap((n) => (n.at ? [new Date(n.at).getTime()] : []))
     .sort((a, b) => a - b)[0]
   if (nextRun !== undefined && nextRun <= time(first.nextRetryAt, now)) return null
-  const name = config.destinations.find((d) => d.id === first.destId)?.name ?? 'destination'
-  return `${waitingText(name, first.nextRetryAt, now)}${rest.length > 0 ? ` +${rest.length} more` : ''}`
+  const name =
+    config.destinations.find((d) => d.id === first.destId)?.name ?? t('retry.destination')
+  const text = waitingText(name, first.nextRetryAt, now)
+  return rest.length > 0 ? t('retry.more', { text, count: rest.length }) : text
 }
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 
 /** "HH:MM" of a retry check, or "now" when it is already due. */
 export function checkClock(nextRetryAt: string | null, now: Date): string {
-  if (nextRetryAt === null || new Date(nextRetryAt).getTime() <= now.getTime()) return 'now'
+  if (nextRetryAt === null || new Date(nextRetryAt).getTime() <= now.getTime()) return t('pair.now')
   const d = new Date(nextRetryAt)
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`
 }

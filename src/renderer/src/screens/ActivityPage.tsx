@@ -1,3 +1,4 @@
+import { t } from '@/i18n'
 import { useEffect, useRef, useState } from 'react'
 import { ChevronRight, Square } from 'lucide-react'
 import type { Config } from '@shared/schema'
@@ -23,12 +24,9 @@ import { cn } from '@/lib/utils'
 
 const PAGE = 30
 
-const TRIGGER: Partial<Record<RunTrigger, string>> = {
-  scheduled: 'Scheduled',
-  'catch-up': 'Catch-up',
-  retry: 'Retry',
-  recovery: 'Recovery'
-}
+const TRIGGERS: RunTrigger[] = ['scheduled', 'catch-up', 'retry', 'recovery']
+const triggerLabel = (tr: RunTrigger): string | null =>
+  TRIGGERS.includes(tr) ? t(`activityPage.trigger.${tr}`) : null
 
 const DOT: Record<JobStatus, string> = {
   completed: 'bg-emerald-500',
@@ -108,15 +106,15 @@ export function ActivityPage({
   return (
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
       <header className="flex items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold">Activity</h1>
+        <h1 className="text-xl font-semibold">{t('activityPage.title')}</h1>
         <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger className="w-56">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All backups and drives</SelectItem>
+            <SelectItem value="all">{t('activityPage.all')}</SelectItem>
             <SelectGroup>
-              <SelectLabel>Backups</SelectLabel>
+              <SelectLabel>{t('activityPage.backups')}</SelectLabel>
               {config.sources.map((s) => (
                 <SelectItem key={s.id} value={`backup:${s.id}`}>
                   {s.name}
@@ -124,7 +122,7 @@ export function ActivityPage({
               ))}
             </SelectGroup>
             <SelectGroup>
-              <SelectLabel>Drives</SelectLabel>
+              <SelectLabel>{t('activityPage.drives')}</SelectLabel>
               {config.destinations.map((d) => (
                 <SelectItem key={d.id} value={`drive:${d.id}`}>
                   {d.name}
@@ -139,8 +137,10 @@ export function ActivityPage({
         <div className="bg-card grid gap-2 rounded-lg border p-3 text-sm">
           <div className="flex items-center gap-3">
             <span className="font-medium">
-              Backing up {name.source(progress.currentJob.sourceId)} →{' '}
-              {name.dest(progress.currentJob.destId)}
+              {t('activityPage.backingUp', {
+                source: name.source(progress.currentJob.sourceId),
+                dest: name.dest(progress.currentJob.destId)
+              })}
             </span>
             <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
               {progress.currentFile ?? ''}
@@ -154,7 +154,7 @@ export function ActivityPage({
               className="h-7"
               onClick={() => void api.run.cancel()}
             >
-              <Square /> Stop
+              <Square /> {t('common.stop')}
             </Button>
           </div>
           <Progress value={pct} />
@@ -162,7 +162,7 @@ export function ActivityPage({
       )}
 
       {visible.length === 0 && (
-        <p className="text-muted-foreground text-sm">No backups have run yet.</p>
+        <p className="text-muted-foreground text-sm">{t('activityPage.none')}</p>
       )}
       {groupByDay(visible, now).map((g) => (
         <section key={g.label} className="grid gap-2">
@@ -195,7 +195,7 @@ export function ActivityPage({
                           {jobResultText(j)}
                         </span>
                         <span className="text-muted-foreground w-32 shrink-0 text-right text-xs whitespace-nowrap tabular-nums">
-                          {TRIGGER[run.trigger] ? `${TRIGGER[run.trigger]} · ` : ''}
+                          {triggerLabel(run.trigger) ? `${triggerLabel(run.trigger)} · ` : ''}
                           {hm(run.startedAt)}
                         </span>
                       </button>
@@ -218,7 +218,7 @@ export function ActivityPage({
           className="justify-self-center"
           onClick={() => setShown(shown + PAGE)}
         >
-          Show earlier runs
+          {t('activityPage.earlier')}
         </Button>
       )}
     </div>

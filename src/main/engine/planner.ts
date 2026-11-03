@@ -1,5 +1,6 @@
 import {
   effectiveZipSettings,
+  storesFlat,
   type Config,
   type Destination as DestinationConfig,
   type Source
@@ -122,7 +123,7 @@ export async function planRun(
       zip: effectiveZipSettings(source, d),
       indexDir: deps.indexDir,
       absOf: walked.absOf,
-      itemized: true
+      itemized: !storesFlat(source)
     }
     try {
       const job =

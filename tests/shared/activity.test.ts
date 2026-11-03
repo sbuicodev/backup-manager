@@ -7,7 +7,7 @@ const now = new Date(2026, 10, 3, 15, 0)
 test('dayLabel and groupByDay, newest first', () => {
   expect(dayLabel(new Date(2026, 10, 3, 9, 0), now)).toBe('Today')
   expect(dayLabel(new Date(2026, 10, 2, 23, 0), now)).toBe('Yesterday')
-  expect(dayLabel(new Date(2026, 9, 28, 9, 0), now)).toBe('Wednesday, 28 October')
+  expect(dayLabel(new Date(2026, 9, 28, 9, 0), now)).toBe('Wednesday 28 October')
   const runs = [
     { id: 'a', startedAt: new Date(2026, 10, 3, 14, 0).toISOString() },
     { id: 'b', startedAt: new Date(2026, 10, 3, 9, 0).toISOString() },
@@ -31,17 +31,17 @@ test('jobResultText says what a job did in a few words', () => {
   })
   expect(jobResultText(job({ changeCount: 3 }))).toBe('3 changes')
   expect(jobResultText(job({ changeCount: 1 }))).toBe('1 change')
-  expect(jobResultText(job({ changeCount: 0 }))).toBe('no changes')
+  expect(jobResultText(job({ changeCount: 0 }))).toBe('No changes')
   expect(jobResultText(job({ status: 'skipped', reason: 'destination-missing' }))).toBe(
-    'drive not connected'
+    'Drive not connected'
   )
   expect(jobResultText(job({ status: 'skipped', reason: 'source-missing' }))).toBe(
-    'files not found'
+    'Files not found'
   )
   expect(jobResultText(job({ status: 'failed', reason: 'error', error: 'ENOSPC: no space' }))).toBe(
-    'failed · disk full'
+    'Failed · disk full'
   )
-  expect(jobResultText(job({ status: 'cancelled', reason: 'cancelled' }))).toBe('stopped')
+  expect(jobResultText(job({ status: 'cancelled', reason: 'cancelled' }))).toBe('Stopped')
   expect(
     jobResultText(
       job({

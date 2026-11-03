@@ -1,3 +1,4 @@
+import { t } from '@/i18n'
 import { useEffect, useState } from 'react'
 import { ChevronDown, FolderOpen, HardDrive, Plus } from 'lucide-react'
 import { toast } from 'sonner'
@@ -63,7 +64,7 @@ export function DrivePage({
   const others = config.sources.filter((s) => !going.includes(s))
   const save = async (next: Config): Promise<boolean> => {
     const errors = await cfg.save(next)
-    if (errors) toast.error('Couldn’t save', { description: errors.join('\n') })
+    if (errors) toast.error(t('common.couldNotSave'), { description: errors.join('\n') })
     return !errors
   }
 
@@ -89,11 +90,13 @@ export function DrivePage({
               )}
             />
             {info === null
-              ? 'Checking…'
+              ? t('drive.checking')
               : info.available
-                ? `Connected${info.freeBytes !== null ? ` · ${formatBytes(info.freeBytes)} free` : ''}`
-                : 'Not connected'}
-            {!dest.enabled && ' · turned off'}
+                ? info.freeBytes !== null
+                  ? t('drive.free', { size: formatBytes(info.freeBytes) })
+                  : t('drive.connected')
+                : t('drive.notConnected')}
+            {!dest.enabled && t('drive.off')}
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -105,16 +108,16 @@ export function DrivePage({
             <FolderOpen /> {SHOW_IN}
           </Button>
           <Button variant="outline" onClick={() => setEditing(true)}>
-            Edit
+            {t('drive.edit')}
           </Button>
         </div>
       </header>
 
       <section className="grid gap-2">
-        <h2 className="text-muted-foreground px-1 text-xs font-medium">Backups going here</h2>
+        <h2 className="text-muted-foreground px-1 text-xs font-medium">{t('drive.going')}</h2>
         <div className="bg-card divide-y overflow-hidden rounded-lg border">
           {going.length === 0 && (
-            <p className="text-muted-foreground px-3 py-2.5 text-sm">No backup goes here yet.</p>
+            <p className="text-muted-foreground px-3 py-2.5 text-sm">{t('drive.none')}</p>
           )}
           {going.map((s) => {
             const st = pairStatus(
@@ -134,7 +137,9 @@ export function DrivePage({
                 <span className={cn('size-2 shrink-0 rounded-full', TONE_DOT[st.tone])} />
                 <span className="truncate font-medium">{s.name}</span>
                 <span className="text-muted-foreground ml-auto shrink-0 text-xs">
-                  {s.setupComplete ? `${describeSchedule(s.schedule)} · ${st.text}` : 'Not set up'}
+                  {s.setupComplete
+                    ? `${describeSchedule(s.schedule)} · ${st.text}`
+                    : t('summary.notSetUp')}
                 </span>
               </button>
             )
@@ -143,7 +148,7 @@ export function DrivePage({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="hover:bg-accent/50 text-muted-foreground flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm">
-                  <Plus className="size-4" /> Send another backup here
+                  <Plus className="size-4" /> {t('drive.sendHere')}
                   <ChevronDown className="ml-auto size-4" />
                 </button>
               </DropdownMenuTrigger>

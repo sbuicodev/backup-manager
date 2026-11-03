@@ -1,3 +1,4 @@
+import { t } from '@/i18n'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -31,14 +32,14 @@ export function TopBar({
               variant="ghost"
               size="icon"
               className="app-no-drag size-8"
-              aria-label={sidebar.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={sidebar.collapsed ? t('topbar.expand') : t('topbar.collapse')}
               onClick={sidebar.onToggle}
             >
               {sidebar.collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            {sidebar.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            {sidebar.collapsed ? t('topbar.expand') : t('topbar.collapse')}
           </TooltipContent>
         </Tooltip>
       )}

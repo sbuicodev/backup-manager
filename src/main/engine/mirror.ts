@@ -62,11 +62,15 @@ export async function prepareMirrorCopy(ctx: JobContext): Promise<PreparedJob> {
   const excluded = destExcluded(ctx, effectiveExcludes(ctx.source, ctx.globalExcludes))
   const dst = (
     await Promise.all(
-      layout.reads.map(async ({ root, prefix }) =>
-        (await ctx.dest.walk(root, [], root === slug ? mirrorSkipTop(ctx) : undefined)).map(
-          (f) => ({ ...f, rel: `${prefix}${f.rel}` })
+      layout.reads.map(async ({ root, prefix, skip }) => {
+        const skipTop = root === slug ? mirrorSkipTop(ctx) : undefined
+        const walked = await ctx.dest.walk(
+          root,
+          [],
+          skipTop && ((name: string) => name === skip || skipTop(name))
         )
-      )
+        return walked.map((f) => ({ ...f, rel: `${prefix}${f.rel}` }))
+      })
     )
   )
     .flat()

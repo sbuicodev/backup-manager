@@ -1,17 +1,19 @@
+import { t } from '@/i18n'
 import type { Schedule, Weekday } from '@shared/schema'
 
 const WEEK: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAY_NAMES: Weekday[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 const pad = (n: number): string => String(n).padStart(2, '0')
-const cap = (s: string): string => s[0].toUpperCase() + s.slice(1)
 
 export function describeSchedule(s: Schedule | null): string {
-  if (!s) return 'Manual'
+  if (!s) return t('schedule.short.manual')
   if (s.kind === 'interval')
-    return s.everyHours === 1 ? 'Every hour' : `Every ${s.everyHours} hours`
-  if (s.kind === 'daily') return `Daily at ${s.time}`
-  const days = WEEK.filter((d) => s.days.includes(d)).map(cap)
-  return `${days.join(', ')} at ${s.time}`
+    return s.everyHours === 1
+      ? t('schedule.everyHour')
+      : t('schedule.everyHours', { count: s.everyHours })
+  if (s.kind === 'daily') return t('schedule.short.daily', { time: s.time })
+  const days = WEEK.filter((d) => s.days.includes(d)).map((d) => t(`days.${d}`))
+  return t('schedule.short.weekly', { days: days.join(', '), time: s.time })
 }
 
 export function formatBytes(n: number): string {
@@ -28,10 +30,11 @@ export function formatBytes(n: number): string {
 export function formatRelativeTime(at: Date, now: Date): string {
   const diff = at.getTime() - now.getTime()
   const hm = `${pad(at.getHours())}:${pad(at.getMinutes())}`
-  if (diff >= 0 && diff < 60_000) return 'now'
-  if (diff >= 0 && diff < 3_600_000) return `in ${Math.round(diff / 60_000)} min`
-  if (at.toDateString() === now.toDateString()) return `today ${hm}`
-  if (Math.abs(diff) < 6 * 86_400_000) return `${DAY_NAMES[at.getDay()]} ${hm}`
+  if (diff >= 0 && diff < 60_000) return t('relative.now')
+  if (diff >= 0 && diff < 3_600_000)
+    return t('relative.inMin', { count: Math.round(diff / 60_000) })
+  if (at.toDateString() === now.toDateString()) return t('relative.today', { time: hm })
+  if (Math.abs(diff) < 6 * 86_400_000) return `${t(`days.${DAY_NAMES[at.getDay()]}`)} ${hm}`
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${hm}`
 }
 

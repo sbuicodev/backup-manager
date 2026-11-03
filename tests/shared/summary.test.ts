@@ -2,10 +2,9 @@ import { describe, expect, test } from 'vitest'
 import { newDestination, newSource, type Source } from '@shared/schema'
 import type { PairResult, SchedulerStatus } from '@shared/types'
 import {
-  backupSummary,
   backupTone,
   formatAgo,
-  optionsSummary,
+  settingsLines,
   pairStatus,
   shortPath
 } from '../../src/renderer/src/lib/summary'
@@ -47,40 +46,6 @@ test('formatAgo', () => {
   expect(formatAgo(new Date(2026, 9, 1, 9, 0), now)).toBe('2026-10-01')
 })
 
-describe('backupSummary', () => {
-  test('mirror, plain files, interval, backed up', () => {
-    const s = src({ schedule: { kind: 'interval', everyHours: 4 } })
-    expect(backupSummary(s, hoursAgo(2), now)).toBe(
-      'Mirror · plain files · every 4 hours · last backed up 2 hours ago'
-    )
-  })
-  test('versions, one zip, daily, never run', () => {
-    const s = src({
-      mode: 'snapshot',
-      packaging: 'zip-whole',
-      schedule: { kind: 'daily', time: '22:00' }
-    })
-    expect(backupSummary(s, null, now)).toBe(
-      'Versions · one zip · every day at 22:00 · not backed up yet'
-    )
-  })
-  test('manual only, a zip per item', () => {
-    const s = src({ packaging: 'zip-children', schedule: null })
-    expect(backupSummary(s, new Date(2026, 10, 2, 22, 30).toISOString(), now)).toBe(
-      'Mirror · a zip per item · runs only when you click Back up now · last backed up yesterday'
-    )
-  })
-  test('weekly', () => {
-    const s = src({ schedule: { kind: 'weekly', days: ['thu', 'mon'], time: '09:00' } })
-    expect(backupSummary(s, null, now)).toBe(
-      'Mirror · plain files · every Mon, Thu at 09:00 · not backed up yet'
-    )
-  })
-  test('not set up', () => {
-    expect(backupSummary(src({ setupComplete: false }), null, now)).toBe('Not set up')
-  })
-})
-
 describe('pairStatus', () => {
   test('backed up', () => {
     expect(pairStatus(src(), dest, result(), status(), true, now)).toEqual({
@@ -97,7 +62,7 @@ describe('pairStatus', () => {
     })
     expect(pairStatus(src(), dest, result({ status: 'skipped' }), st, false, now)).toEqual({
       tone: 'waiting',
-      text: 'waiting · next check 15:40',
+      text: 'Waiting · next check 15:40',
       canCheckNow: true
     })
   })
@@ -107,27 +72,27 @@ describe('pairStatus', () => {
       reason: 'error',
       error: 'ENOSPC: no space left on device'
     })
-    expect(pairStatus(src(), dest, r, status(), true, now).text).toBe('failed · disk full')
+    expect(pairStatus(src(), dest, r, status(), true, now).text).toBe('Failed · disk full')
     expect(pairStatus(src(), dest, r, status(), true, now).tone).toBe('failed')
     const lost = result({ status: 'failed', reason: 'destination-lost' })
     expect(pairStatus(src(), dest, lost, status(), true, now).text).toBe(
-      'failed · drive disconnected'
+      'Failed · drive disconnected'
     )
   })
   test('never run, not connected, turned off', () => {
     expect(pairStatus(src(), dest, null, status(), true, now)).toMatchObject({
       tone: 'idle',
-      text: 'never'
+      text: 'Never'
     })
     expect(pairStatus(src(), dest, null, status(), false, now)).toMatchObject({
       tone: 'idle',
-      text: 'not connected'
+      text: 'Not connected'
     })
     expect(
       pairStatus(src(), { ...dest, enabled: false }, result(), status(), true, now)
     ).toMatchObject({
       tone: 'off',
-      text: 'turned off'
+      text: 'Off'
     })
   })
   test('finished with warnings', () => {
@@ -165,23 +130,38 @@ test('shortPath shows home folders as ~', () => {
   expect(shortPath('/Volumes/NAS/backups')).toBe('/Volumes/NAS/backups')
 })
 
-describe('optionsSummary', () => {
-  test('mirror with trash and exclusions', () => {
-    const s = src({ excludes: ['*.tmp', 'node_modules/'] })
+describe('settingsLines', () => {
+  const lines = (s: Source) => settingsLines(s).map((l) => [l.id, l.text])
+  test('a copy of one folder, every day, trash and exclusions', () => {
+    const s = src({
+      excludes: ['*.tmp', 'node_modules/'],
+      schedule: { kind: 'daily', time: '22:00' }
+    })
     s.mirror = { deletion: 'trash', trashRetentionDays: 30 }
-    expect(optionsSummary(s)).toBe('Deleted files kept in the trash for 30 days · 2 exclusions')
+    expect(lines(s)).toEqual([
+      ['schedule', 'Every day at 22:00'],
+      ['versions', 'Copy · deleted items to Trash for 30 days'],
+      ['zip', 'Plain files · skips 2 patterns'],
+      ['general', 'Folder name: contents directly in “Documents”']
+    ])
   })
-  test('versions, kept forever, zip split', () => {
-    const s = src({ mode: 'snapshot', packaging: 'zip-whole' })
-    s.zip = { ...s.zip, partLimitBytes: 4 * 1024 ** 3 }
-    expect(optionsSummary(s)).toBe('Keeps at least 10 versions · zips split at 4 GB')
-  })
-  test('other deletion policies and retries off', () => {
-    const exact = src({ retryWhenAvailable: false })
-    exact.mirror = { deletion: 'exact', trashRetentionDays: null }
-    expect(optionsSummary(exact)).toBe('Deleted files removed from the backup · no retries')
-    const never = src()
-    never.mirror = { deletion: 'never', trashRetentionDays: null }
-    expect(optionsSummary(never)).toBe('Deleted files stay in the backup')
+  test('versions of several items, zipped and split, by hand', () => {
+    const s = src({
+      mode: 'snapshot',
+      packaging: 'zip-whole',
+      schedule: null,
+      items: [
+        { path: '/Users/me/Documents', kind: 'folder' },
+        { path: '/Users/me/notes.txt', kind: 'file' }
+      ]
+    })
+    s.snapshot = { keepMin: 5, maxAgeDays: 30 }
+    s.zip = { ...s.zip, level: 6, partLimitBytes: 4 * 1024 ** 3 }
+    expect(lines(s)).toEqual([
+      ['schedule', 'Manually'],
+      ['versions', 'Versions · keeps at least 5 versions for 30 days'],
+      ['zip', 'One zip · level 6 · split at 4 GB'],
+      ['general', 'Folder name: each item by name in “Documents”']
+    ])
   })
 })

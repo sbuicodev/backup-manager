@@ -1,10 +1,11 @@
+import { t } from '@/i18n'
 import { slugify, type Config, type Source } from '@shared/schema'
 import type { Plan } from '@shared/types'
 import { formatBytes } from './format'
 
 /** What the detail pane shows. */
 export type Selection =
-  { kind: 'backup' | 'drive'; id: string } | { kind: 'activity' | 'settings' | 'new' | 'empty' }
+  { kind: 'backup' | 'drive'; id: string } | { kind: 'activity' | 'settings' | 'empty' }
 
 /**
  * A selection that still exists: a removed backup or drive falls back to the first backup, a
@@ -31,16 +32,14 @@ export function duplicateSource(source: Source, existingSlugs: string[]): Source
   return {
     ...copy,
     id: crypto.randomUUID(),
-    name: `${source.name} copy`,
+    name: t('sidebar.copySuffix', { name: source.name }),
     slug: slugify(`${source.slug} copy`, existingSlugs)
   }
 }
 
-const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
-
 /** What Back up now would do, for its tooltip. */
 export function planPreview(plan: Plan): string {
-  if (plan.jobs.length === 0) return 'Nothing to back up'
+  if (plan.jobs.length === 0) return t('preview.nothing')
   const ready = plan.jobs.filter((j) => j.status === 'ready')
   const files = ready.reduce((n, j) => n + j.counts.copy + j.counts.update, 0)
   const zips = ready.reduce((n, j) => n + j.counts.zip, 0)
@@ -49,14 +48,14 @@ export function planPreview(plan: Plan): string {
     plan.jobs.filter((j) => j.reason === 'destination-missing').map((j) => j.destId)
   ).size
   const work = [
-    files > 0 && `copy ${plural(files, 'file', 'files')}`,
-    zips > 0 && `write ${plural(zips, 'archive', 'archives')}`
+    files > 0 && t('preview.copyFiles', { count: files }),
+    zips > 0 && t('preview.writeArchives', { count: zips })
   ].filter(Boolean)
   const parts = [
     work.length > 0
-      ? `Will ${work.join(' and ')} (${formatBytes(bytes)})`
-      : 'Everything is up to date',
-    missing > 0 && `${plural(missing, 'drive', 'drives')} not connected`
+      ? t('preview.will', { work: work.join(t('preview.and')), size: formatBytes(bytes) })
+      : t('preview.upToDate'),
+    missing > 0 && t('preview.drivesMissing', { count: missing })
   ].filter(Boolean)
   return parts.join(' · ')
 }

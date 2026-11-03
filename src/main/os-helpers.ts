@@ -1,5 +1,4 @@
 import type { Config, Settings } from '@shared/schema'
-import { formatAgo } from '@shared/time'
 import type { JobRequest, PairResult, RunStatus, SchedulerStatus } from '@shared/types'
 import { targets } from './engine/planner'
 
@@ -33,7 +32,9 @@ export function trayStatusLine(
   const retries = n === 0 ? '' : ` · ${n} ${n === 1 ? 'retry' : 'retries'} pending`
   if (!next) return `Idle · no schedules${retries}`
   const name = config.sources.find((s) => s.id === next.sourceId)?.name ?? '?'
-  return `Idle · next: ${name} at ${shortTime(new Date(next.at), now)}${retries}`
+  const together = status.nextRuns.filter((n) => n.at === next.at).length - 1
+  const more = together > 0 ? ` and ${together} more` : ''
+  return `Idle · next: ${name}${more} at ${shortTime(new Date(next.at), now)}${retries}`
 }
 
 export type TrayAction = 'run-all' | 'cancel' | 'pause-hour' | 'pause-forever' | 'resume'
@@ -104,34 +105,28 @@ export function windowMaterial(
   return {}
 }
 
-/** One tray line per backup: "Documents — backed up 2 hours ago", "Photos — waiting for USB stick". */
-export function trayBackupLines(
+/**
+ * The tray's one line about backups that need a look (failed, or waiting for a drive): the
+ * backup itself when there is one, a count otherwise; null when all is well. One line, so the
+ * menu stays short however many backups there are.
+ */
+export function trayAttention(
   config: Config,
   results: PairResult[],
-  status: SchedulerStatus,
-  now: Date
-): Array<{ id: string; label: string }> {
-  return config.sources.map((s) => {
+  status: SchedulerStatus
+): { id: string | null; label: string } | null {
+  const problems = config.sources.flatMap((s) => {
+    if (!s.setupComplete || !s.enabled) return []
     const dests = config.destinations.filter((d) => targets(s, d))
-    const mine = results
-      .filter((r) => r.sourceId === s.id && dests.some((d) => d.id === r.destId))
-      .sort((a, b) => (a.endedAt < b.endedAt ? 1 : -1))
     const retry = status.pendingRetries.find((r) => r.sourceId === s.id)
     const waitingFor = retry && config.destinations.find((d) => d.id === retry.destId)?.name
-    const lastOk = mine.find(
-      (r) => r.status === 'completed' || r.status === 'completed-with-warnings'
+    if (waitingFor) return [{ id: s.id, label: `${s.name} is waiting for ${waitingFor}` }]
+    const failed = results.some(
+      (r) => r.sourceId === s.id && r.status === 'failed' && dests.some((d) => d.id === r.destId)
     )
-    const state = !s.setupComplete
-      ? 'not set up'
-      : !s.enabled
-        ? 'paused'
-        : waitingFor
-          ? `waiting for ${waitingFor}`
-          : mine.some((r) => r.status === 'failed')
-            ? 'failed'
-            : lastOk
-              ? `backed up ${formatAgo(new Date(lastOk.endedAt), now)}`
-              : 'not backed up yet'
-    return { id: s.id, label: `${s.name} — ${state}` }
+    return failed ? [{ id: s.id, label: `${s.name} failed` }] : []
   })
+  if (problems.length === 0) return null
+  if (problems.length === 1) return problems[0]
+  return { id: null, label: `${problems.length} backups need attention` }
 }

@@ -1,3 +1,4 @@
+import { t } from '@/i18n'
 import { useState } from 'react'
 import { Download, Upload } from 'lucide-react'
 import { toast } from 'sonner'
@@ -50,7 +51,7 @@ export function Settings({
   const [excludes, setExcludes] = useState(config.globalExcludes.join('\n'))
   const save = async (next: Config): Promise<void> => {
     const errors = await cfg.save(next)
-    if (errors) toast.error('Could not save', { description: errors.join('\n') })
+    if (errors) toast.error(t('settings.couldNotSave'), { description: errors.join('\n') })
   }
   const setSetting = <K extends keyof SettingsT>(key: K, value: SettingsT[K]): Promise<void> =>
     save({ ...config, settings: { ...config.settings, [key]: value } })
@@ -66,23 +67,23 @@ export function Settings({
     const r = await api.config.import()
     if (!r) return
     if (r.ok) {
-      toast.success('Configuration imported')
+      toast.success(t('settings.imported'))
       await cfg.reload()
     } else {
-      toast.error('Import failed', { description: r.errors.join('\n') })
+      toast.error(t('settings.importFailed'), { description: r.errors.join('\n') })
     }
   }
 
   return (
     <div>
-      <PageHeader title="Settings" />
+      <PageHeader title={t('settings.title')} />
       <div className="grid gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>Appearance</CardTitle>
+            <CardTitle>{t('settings.appearance')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <Row label="Glass appearance" hint="Frosted, translucent panels over the desktop.">
+            <Row label={t('settings.glass')} hint={t('settings.glassHint')}>
               <Switch
                 checked={config.settings.glass}
                 onCheckedChange={(v) => void setSetting('glass', v)}
@@ -92,26 +93,23 @@ export function Settings({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Background</CardTitle>
-            <CardDescription>How the app runs scheduled backups.</CardDescription>
+            <CardTitle>{t('settings.background')}</CardTitle>
+            <CardDescription>{t('settings.backgroundHint')}</CardDescription>
           </CardHeader>
           <CardContent className="divide-y">
-            <Row label="Launch at login" hint="Starts hidden in the menu bar / system tray.">
+            <Row label={t('settings.login')} hint={t('settings.loginHint')}>
               <Switch
                 checked={config.settings.launchAtLogin}
                 onCheckedChange={(v) => void setSetting('launchAtLogin', v)}
               />
             </Row>
-            <Row
-              label="Skip scheduled runs on battery"
-              hint="Due backups wait until the computer is plugged in."
-            >
+            <Row label={t('settings.battery')} hint={t('settings.batteryHint')}>
               <Switch
                 checked={config.settings.skipScheduledOnBattery}
                 onCheckedChange={(v) => void setSetting('skipScheduledOnBattery', v)}
               />
             </Row>
-            <Row label="Notifications">
+            <Row label={t('settings.notifications')}>
               <Select
                 value={config.settings.notifications}
                 onValueChange={(v) =>
@@ -122,9 +120,9 @@ export function Settings({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="problems">Only failures and warnings</SelectItem>
-                  <SelectItem value="always">After every run</SelectItem>
-                  <SelectItem value="never">Never</SelectItem>
+                  <SelectItem value="problems">{t('settings.problems')}</SelectItem>
+                  <SelectItem value="always">{t('settings.always')}</SelectItem>
+                  <SelectItem value="never">{t('settings.never')}</SelectItem>
                 </SelectContent>
               </Select>
             </Row>
@@ -132,11 +130,8 @@ export function Settings({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Global exclusions</CardTitle>
-            <CardDescription>
-              Glob patterns skipped in every source (unless a source turns them off). One per line;
-              a pattern without “/” matches at any depth, a trailing “/” matches folders only.
-            </CardDescription>
+            <CardTitle>{t('settings.excludes')}</CardTitle>
+            <CardDescription>{t('settings.excludesHint')}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
             <Textarea
@@ -151,22 +146,22 @@ export function Settings({
                 onClick={saveExcludes}
                 disabled={excludes === config.globalExcludes.join('\n')}
               >
-                Save exclusions
+                {t('settings.saveExcludes')}
               </Button>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Configuration file</CardTitle>
+            <CardTitle>{t('settings.file')}</CardTitle>
             <CardDescription className="font-mono text-xs break-all">{path}</CardDescription>
           </CardHeader>
           <CardContent className="flex gap-2">
             <Button variant="outline" onClick={() => void api.config.export()}>
-              <Download /> Export…
+              <Download /> {t('settings.export')}
             </Button>
             <Button variant="outline" onClick={doImport}>
-              <Upload /> Import…
+              <Upload /> {t('settings.import')}
             </Button>
           </CardContent>
         </Card>

@@ -1,3 +1,4 @@
+import { t } from '@/i18n'
 import { useState } from 'react'
 import { Archive, HardDrive, History, Pause, Plus, Settings } from 'lucide-react'
 import { toast } from 'sonner'
@@ -22,6 +23,12 @@ import {
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import type { UseConfig } from '@/hooks/useConfig'
 import { api } from '@/lib/api'
 import { duplicateSource, type Selection } from '@/lib/selection'
@@ -38,23 +45,15 @@ const DOT: Record<BackupTone, string> = {
   notSetUp: 'border border-muted-foreground/60 bg-transparent'
 }
 
-const TONE_LABEL: Record<BackupTone, string> = {
-  ok: 'Backed up',
-  waiting: 'Waiting',
-  failed: 'Failed',
-  running: 'Backing up',
-  idle: 'Not backed up yet',
-  paused: 'Paused',
-  notSetUp: 'Not set up'
-}
+const toneLabel = (tone: BackupTone): string => t(`sidebar.tone.${tone}`)
 
 /** The OS file browser's name, for "Show in …". */
 export const SHOW_IN =
   api.app.platform === 'darwin'
-    ? 'Show in Finder'
+    ? t('sidebar.showInFinder')
     : api.app.platform === 'win32'
-      ? 'Show in Explorer'
-      : 'Show in folder'
+      ? t('sidebar.showInExplorer')
+      : t('sidebar.showInFolder')
 
 /** Joins a destination folder and a name with that folder's own separator. */
 const joinPath = (dir: string, name: string): string =>
@@ -110,6 +109,24 @@ function Row({
   )
 }
 
+/** The + beside a sidebar heading. */
+function AddButton({ label, onClick }: { label: string; onClick: () => void }): React.JSX.Element {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          aria-label={label}
+          className="hover:text-foreground hover:bg-sidebar-accent/60 rounded p-0.5"
+          onClick={onClick}
+        >
+          <Plus className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 function Heading({
   collapsed,
   children,
@@ -138,7 +155,8 @@ export function AppSidebar({
   status,
   results,
   availability,
-  runningSourceId
+  runningSourceId,
+  onNewBackup
 }: {
   cfg: UseConfig
   config: Config
@@ -149,6 +167,8 @@ export function AppSidebar({
   results: PairResult[]
   availability: Record<string, boolean>
   runningSourceId: string | null
+  /** Opens the new-backup sheet. */
+  onNewBackup: () => void
 }): React.JSX.Element {
   const [editingDrive, setEditingDrive] = useState<Destination | 'new' | null>(null)
   const [deletingBackup, setDeletingBackup] = useState<Source | null>(null)
@@ -157,7 +177,7 @@ export function AppSidebar({
 
   const save = async (next: Config): Promise<boolean> => {
     const errors = await cfg.save(next)
-    if (errors) toast.error('Couldn’t save', { description: errors.join('\n') })
+    if (errors) toast.error(t('common.couldNotSave'), { description: errors.join('\n') })
     return !errors
   }
   const patchSource = (s: Source): Promise<boolean> =>
@@ -172,7 +192,7 @@ export function AppSidebar({
   const showBackupInFinder = async (s: Source): Promise<void> => {
     const d = destinationsOf(config, s).find((x) => availability[x.id])
     if (!d || !(await api.shell.showInFolder(joinPath(d.path, s.slug)))) {
-      toast.error('No connected drive holds this backup yet')
+      toast.error(t('sidebar.noDrive'))
     }
   }
   const sel = (kind: 'backup' | 'drive', id: string): boolean =>
@@ -194,7 +214,12 @@ export function AppSidebar({
       )}
     >
       <nav className="grid flex-1 auto-rows-max grid-cols-[minmax(0,1fr)] gap-0.5 overflow-y-auto p-3">
-        <Heading collapsed={collapsed}>Backups</Heading>
+        <Heading
+          collapsed={collapsed}
+          action={<AddButton label={t('sidebar.addBackup')} onClick={onNewBackup} />}
+        >
+          {t('sidebar.backups')}
+        </Heading>
         {config.sources.map((s) => {
           const tone = backupTone(
             s,
@@ -210,7 +235,11 @@ export function AppSidebar({
                   <Row
                     selected={sel('backup', s.id)}
                     collapsed={collapsed}
-                    label={collapsed ? `${s.name} — ${TONE_LABEL[tone]}` : s.name}
+                    label={
+                      collapsed
+                        ? t('sidebar.withTone', { name: s.name, tone: toneLabel(tone) })
+                        : s.name
+                    }
                     muted={tone === 'notSetUp' || tone === 'paused'}
                     onClick={() => onSelect({ kind: 'backup', id: s.id })}
                     icon={
@@ -220,7 +249,7 @@ export function AppSidebar({
                           <Pause className="text-muted-foreground size-3" />
                         ) : (
                           <span
-                            aria-label={TONE_LABEL[tone]}
+                            aria-label={toneLabel(tone)}
                             className={cn(
                               'rounded-full',
                               collapsed ? 'absolute -right-0.5 -bottom-0.5 size-2' : 'size-2',
@@ -238,10 +267,10 @@ export function AppSidebar({
                   disabled={!s.setupComplete || !s.enabled}
                   onSelect={() => void api.run.start([s.id])}
                 >
-                  Back up now
+                  {t('sidebar.backUpNow')}
                 </ContextMenuItem>
                 <ContextMenuItem onSelect={() => void patchSource({ ...s, enabled: !s.enabled })}>
-                  {s.enabled ? 'Pause this backup' : 'Resume this backup'}
+                  {s.enabled ? t('sidebar.pause') : t('sidebar.resume')}
                 </ContextMenuItem>
                 <ContextMenuItem
                   onSelect={() =>
@@ -257,14 +286,14 @@ export function AppSidebar({
                     })
                   }
                 >
-                  Duplicate
+                  {t('sidebar.duplicate')}
                 </ContextMenuItem>
                 <ContextMenuItem onSelect={() => void showBackupInFinder(s)}>
                   {SHOW_IN}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
                 <ContextMenuItem variant="destructive" onSelect={() => setDeletingBackup(s)}>
-                  Delete…
+                  {t('sidebar.delete')}
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
@@ -274,16 +303,10 @@ export function AppSidebar({
         <Heading
           collapsed={collapsed}
           action={
-            <button
-              aria-label="Add drive"
-              className="hover:text-foreground rounded p-0.5"
-              onClick={() => setEditingDrive('new')}
-            >
-              <Plus className="size-3.5" />
-            </button>
+            <AddButton label={t('sidebar.addDrive')} onClick={() => setEditingDrive('new')} />
           }
         >
-          Drives
+          {t('sidebar.drives')}
         </Heading>
         {shared.map((d) => (
           <ContextMenu key={d.id}>
@@ -292,7 +315,11 @@ export function AppSidebar({
                 <Row
                   selected={sel('drive', d.id)}
                   collapsed={collapsed}
-                  label={availability[d.id] === false ? `${d.name} (not connected)` : d.name}
+                  label={
+                    availability[d.id] === false
+                      ? t('sidebar.notConnected', { name: d.name })
+                      : d.name
+                  }
                   muted={availability[d.id] === false || !d.enabled}
                   onClick={() => onSelect({ kind: 'drive', id: d.id })}
                   icon={<HardDrive className="size-4 shrink-0" />}
@@ -306,10 +333,12 @@ export function AppSidebar({
               >
                 {SHOW_IN}
               </ContextMenuItem>
-              <ContextMenuItem onSelect={() => setEditingDrive(d)}>Edit…</ContextMenuItem>
+              <ContextMenuItem onSelect={() => setEditingDrive(d)}>
+                {t('sidebar.edit')}
+              </ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem variant="destructive" onSelect={() => setRemovingDrive(d)}>
-                Remove…
+                {t('sidebar.remove')}
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
@@ -319,24 +348,37 @@ export function AppSidebar({
         <Row
           selected={selection.kind === 'activity'}
           collapsed={collapsed}
-          label="Activity"
+          label={t('sidebar.activity')}
           onClick={() => onSelect({ kind: 'activity' })}
           icon={<History className="size-4 shrink-0" />}
         />
       </nav>
 
       <div className={cn('flex gap-1 border-t p-2', collapsed && 'flex-col')}>
-        <Row
-          selected={selection.kind === 'new'}
-          collapsed={collapsed}
-          label="New backup"
-          onClick={() => onSelect({ kind: 'new' })}
-          icon={<Plus className="size-4 shrink-0" />}
-        />
+        {collapsed && (
+          // Collapsed, the headings and their + buttons are hidden: one menu offers both.
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                aria-label={t('sidebar.new')}
+                className="hover:bg-sidebar-accent/60 flex size-8 shrink-0 items-center justify-center rounded-md"
+              >
+                <Plus className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="end">
+              <DropdownMenuItem onSelect={onNewBackup}>{t('sidebar.addBackup')}…</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setEditingDrive('new')}>
+                {t('sidebar.addDrive')}…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        <div className="flex-1" />
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              aria-label="Settings"
+              aria-label={t('sidebar.settings')}
               onClick={() => onSelect({ kind: 'settings' })}
               className={cn(
                 'hover:bg-sidebar-accent/60 flex size-8 shrink-0 items-center justify-center rounded-md',
@@ -346,7 +388,7 @@ export function AppSidebar({
               <Settings className="size-4" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">Settings</TooltipContent>
+          <TooltipContent side="right">{t('sidebar.settings')}</TooltipContent>
         </Tooltip>
       </div>
 
@@ -363,15 +405,17 @@ export function AppSidebar({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete “{deletingBackup?.name}”?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t('sidebar.deleteTitle', { name: deletingBackup?.name })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              It won’t be backed up any more. Existing backups on your drives aren’t deleted.
+              {t('sidebar.deleteBody')}
               {ownedByDeleting.length > 0 &&
-                ` Its own drives are removed too: ${ownedByDeleting.map((d) => d.name).join(', ')}.`}
+                t('sidebar.deleteOwn', { names: ownedByDeleting.map((d) => d.name).join(', ') })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() =>
                 deletingBackup &&
@@ -384,7 +428,7 @@ export function AppSidebar({
                 })
               }
             >
-              Delete
+              {t('sidebar.deleteAction')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -392,15 +436,17 @@ export function AppSidebar({
       <AlertDialog open={removingDrive !== null} onOpenChange={(o) => !o && setRemovingDrive(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove “{removingDrive?.name}”?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t('sidebar.removeTitle', { name: removingDrive?.name })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Backups already on it aren’t deleted.
+              {t('sidebar.removeBody')}
               {usingRemoved.length > 0 &&
-                ` It’s also removed from: ${usingRemoved.map((s) => s.name).join(', ')}.`}
+                t('sidebar.removeFrom', { names: usingRemoved.map((s) => s.name).join(', ') })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() =>
                 removingDrive &&
@@ -418,7 +464,7 @@ export function AppSidebar({
                 })
               }
             >
-              Remove
+              {t('sidebar.removeAction')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

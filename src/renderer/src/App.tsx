@@ -1,6 +1,8 @@
+import { t } from '@/i18n'
 import { useEffect, useRef, useState } from 'react'
 import { Archive, Pause, Play, Plus, Square } from 'lucide-react'
-import type { Config } from '@shared/schema'
+import type { Config, Destination } from '@shared/schema'
+import { toast } from 'sonner'
 import type { SchedulerStatus } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,7 +28,8 @@ import { cn } from '@/lib/utils'
 import { useRunProgress } from '@/hooks/useRunProgress'
 import { DrivePage } from '@/screens/DrivePage'
 import { ActivityPage } from '@/screens/ActivityPage'
-import { BackupEditPage, BackupPage } from '@/screens/BackupPage'
+import { BackupPage } from '@/screens/BackupPage'
+import { BackupConfigDialog } from '@/components/BackupConfigDialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,10 +43,11 @@ import {
 import { buildNextConfig, draftFrom, errorsByGroup, isDirty, type Draft } from '@/lib/backup-draft'
 import { Settings } from '@/screens/Settings'
 import { NewBackupAssistant } from '@/screens/NewBackupAssistant'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
 /** Back up now, or Stop while a run is active; hovering previews what a run would do. */
 function BackUpNowButton({ running }: { running: boolean }): React.JSX.Element {
-  const [preview, setPreview] = useState('Checking what to back up…')
+  const [preview, setPreview] = useState(t('app.checking'))
   if (running) {
     return (
       <Button
@@ -52,7 +56,7 @@ function BackUpNowButton({ running }: { running: boolean }): React.JSX.Element {
         className="app-no-drag"
         onClick={() => void api.run.cancel()}
       >
-        <Square /> Stop
+        <Square /> {t('common.stop')}
       </Button>
     )
   }
@@ -63,12 +67,12 @@ function BackUpNowButton({ running }: { running: boolean }): React.JSX.Element {
           size="sm"
           className="app-no-drag"
           onMouseEnter={() => {
-            setPreview('Checking what to back up…')
+            setPreview(t('app.checking'))
             void api.run.plan().then((p) => setPreview(planPreview(p)))
           }}
           onClick={() => void api.run.start()}
         >
-          <Play /> Back up now
+          <Play /> {t('app.backUpNow')}
         </Button>
       </TooltipTrigger>
       <TooltipContent side="bottom">{preview}</TooltipContent>
@@ -78,19 +82,19 @@ function BackUpNowButton({ running }: { running: boolean }): React.JSX.Element {
 
 function statusText(status: SchedulerStatus | null, config: Config, now: Date): string {
   if (!status) return ''
-  if (status.active) return 'Backup running…'
-  if (status.pausedUntil === 'forever') return 'Schedules paused'
+  if (status.active) return t('app.running')
+  if (status.pausedUntil === 'forever') return t('app.paused')
   if (status.pausedUntil) {
-    return `Schedules paused until ${formatRelativeTime(new Date(status.pausedUntil), now)}`
+    return t('app.pausedUntil', { time: formatRelativeTime(new Date(status.pausedUntil), now) })
   }
   const waiting = headerRetryText(status, config, now)
   if (waiting) return waiting
   const next = status.nextRuns
     .filter((n): n is { sourceId: string; at: string } => n.at !== null)
     .sort((a, b) => (a.at < b.at ? -1 : 1))[0]
-  if (!next) return 'No scheduled backups'
+  if (!next) return t('app.noSchedules')
   const name = config.sources.find((s) => s.id === next.sourceId)?.name ?? ''
-  return `Next: ${name} ${formatRelativeTime(new Date(next.at), now)}`
+  return t('app.next', { name, time: formatRelativeTime(new Date(next.at), now) })
 }
 
 /** Scheduler state and the pause/resume control, shown on the right of the top bar. */
@@ -115,13 +119,13 @@ function SchedulerStatusControls({
       <div className="app-no-drag flex shrink-0 gap-2">
         {paused ? (
           <Button size="sm" variant="outline" onClick={() => void api.scheduler.resume()}>
-            <Play /> Resume
+            <Play /> {t('app.resume')}
           </Button>
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm" variant="ghost">
-                <Pause /> Pause
+                <Pause /> {t('app.pause')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -130,10 +134,10 @@ function SchedulerStatusControls({
                   void api.scheduler.pause(new Date(Date.now() + 3_600_000).toISOString())
                 }
               >
-                For 1 hour
+                {t('app.forHour')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => void api.scheduler.pause('forever')}>
-                Until resumed
+                {t('app.untilResumed')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -149,12 +153,10 @@ function EmptyState({ onNew }: { onNew: () => void }): React.JSX.Element {
   return (
     <div className="mx-auto mt-24 grid max-w-sm justify-items-center gap-3 text-center">
       <Archive className="text-muted-foreground size-10" />
-      <h1 className="text-lg font-semibold">Choose what to back up</h1>
-      <p className="text-muted-foreground text-sm">
-        Pick files and folders, then where they should go. It takes a minute.
-      </p>
+      <h1 className="text-lg font-semibold">{t('app.emptyTitle')}</h1>
+      <p className="text-muted-foreground text-sm">{t('app.emptyBody')}</p>
       <Button onClick={onNew}>
-        <Plus /> New backup
+        <Plus /> {t('common.newBackup')}
       </Button>
     </div>
   )
@@ -180,19 +182,16 @@ function ConfigError({
     <div className="flex h-full flex-col">
       <TopBar />
       <div className="mx-auto mt-20 max-w-xl overflow-auto p-6">
-        <h1 className="text-xl font-semibold">The configuration file could not be loaded</h1>
+        <h1 className="text-xl font-semibold">{t('app.configError')}</h1>
         <p className="text-muted-foreground mt-2 text-sm break-all">{path}</p>
         <pre className="bg-muted mt-4 max-h-60 overflow-auto rounded-md p-3 text-xs">
           {errors.join('\n')}
         </pre>
-        <p className="text-muted-foreground mt-4 text-sm">
-          Scheduled backups are paused until this is fixed. Fix the file by hand and restart, import
-          another configuration, or start over.
-        </p>
+        <p className="text-muted-foreground mt-4 text-sm">{t('app.configErrorBody')}</p>
         <div className="mt-4 flex gap-2">
-          <Button onClick={doImport}>Import configuration…</Button>
+          <Button onClick={doImport}>{t('app.import')}</Button>
           <Button variant="outline" onClick={reset}>
-            Reset to defaults
+            {t('app.reset')}
           </Button>
         </div>
       </div>
@@ -247,7 +246,9 @@ function App(): React.JSX.Element {
   // The backup being edited, if any; nothing is saved until Save.
   const [draft, setDraft] = useState<Draft | null>(null)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
-  const [pendingSel, setPendingSel] = useState<Selection | null>(null)
+  // Where leaving with unsaved edits was headed: another page, or just closing the configuration.
+  const [pendingSel, setPendingSel] = useState<Selection | 'close' | null>(null)
+  const [editSection, setEditSection] = useState<string | undefined>()
   const configNow = cfg.state?.ok ? cfg.state.config : null
   const dirty = draft !== null && configNow !== null && isDirty(configNow, draft)
   // Main-process events subscribe once, so they reach the current state through refs.
@@ -255,6 +256,7 @@ function App(): React.JSX.Element {
   dirtyRef.current = dirty
   const selectRef = useRef<(s: Selection) => void>(() => {})
   const runIdAfterLeave = useRef<string | undefined>(undefined)
+  const [creating, setCreating] = useState(false)
   useEffect(() => {
     if (!dirty) return
     // Quitting with unsaved edits: main shows a Discard / Cancel prompt.
@@ -301,6 +303,15 @@ function App(): React.JSX.Element {
     else go(r.go)
   }
   selectRef.current = select
+  const addShared = async (d: Destination): Promise<boolean> => {
+    const errors = await cfg.save({ ...config, destinations: [...config.destinations, d] })
+    if (errors) toast.error(t('common.couldNotSave'), { description: errors.join('\n') })
+    return !errors
+  }
+  const closeDraft = (): void => {
+    setDraft(null)
+    setFormErrors({})
+  }
   const saveDraft = async (): Promise<boolean> => {
     if (!draft) return true
     const r = buildNextConfig(config, draft)
@@ -336,28 +347,15 @@ function App(): React.JSX.Element {
             results={results}
             availability={availability}
             runningSourceId={runningSourceId}
+            onNewBackup={() => setCreating(true)}
           />
           <main className="flex min-w-0 flex-1 flex-col">
             <div className="flex-1 overflow-auto p-6">
               {/* Pages sit in one centred column so wide windows don't leave them on the left. */}
               <div className="mx-auto w-full max-w-5xl">
-                {selection.kind === 'empty' && <EmptyState onNew={() => select({ kind: 'new' })} />}
+                {selection.kind === 'empty' && <EmptyState onNew={() => setCreating(true)} />}
                 {/* Until their new pages land, these show the previous screens. */}
-                {selection.kind === 'backup' && draft?.source.id === selection.id && (
-                  <BackupEditPage
-                    config={config}
-                    draft={draft}
-                    onChange={setDraft}
-                    dirty={dirty}
-                    errors={formErrors}
-                    onSave={() => void saveDraft()}
-                    onCancel={() => {
-                      setDraft(null)
-                      setFormErrors({})
-                    }}
-                  />
-                )}
-                {selection.kind === 'backup' && draft?.source.id !== selection.id && (
+                {selection.kind === 'backup' && (
                   <BackupPage
                     config={config}
                     source={config.sources.find((x) => x.id === selection.id)!}
@@ -366,26 +364,19 @@ function App(): React.JSX.Element {
                     availability={availability}
                     progress={progress}
                     running={runningSourceId === selection.id}
-                    onEdit={() =>
+                    onEdit={(section) => {
+                      setEditSection(section)
                       setDraft(
                         draftFrom(
                           config,
                           config.sources.find((x) => x.id === selection.id)!
                         )
                       )
-                    }
+                    }}
                     onOpenRun={(id) => {
                       go({ kind: 'activity' })
                       setRunId(id)
                     }}
-                  />
-                )}
-                {selection.kind === 'new' && (
-                  <NewBackupAssistant
-                    cfg={cfg}
-                    config={config}
-                    availability={availability}
-                    onDone={(id) => go({ kind: 'backup', id })}
                   />
                 )}
                 {selection.kind === 'drive' && (
@@ -414,6 +405,36 @@ function App(): React.JSX.Element {
           </main>
         </div>
       </div>
+      {creating && (
+        <Dialog open onOpenChange={(o) => !o && setCreating(false)}>
+          <DialogContent className="sm:max-w-xl">
+            <DialogTitle className="sr-only">{t('common.newBackup')}</DialogTitle>
+            <NewBackupAssistant
+              cfg={cfg}
+              config={config}
+              availability={availability}
+              onDone={(id) => {
+                setCreating(false)
+                select({ kind: 'backup', id })
+              }}
+              onCancel={() => setCreating(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+      {selection.kind === 'backup' && draft?.source.id === selection.id && (
+        <BackupConfigDialog
+          config={config}
+          draft={draft}
+          onChange={setDraft}
+          dirty={dirty}
+          errors={formErrors}
+          section={editSection}
+          onSave={() => void saveDraft()}
+          onClose={() => (dirty ? setPendingSel('close') : closeDraft())}
+          addShared={addShared}
+        />
+      )}
       <AlertDialog
         open={pendingSel !== null}
         onOpenChange={(o) => {
@@ -424,22 +445,23 @@ function App(): React.JSX.Element {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Save your changes to “{draft?.source.name}”?</AlertDialogTitle>
-            <AlertDialogDescription>
-              If you don’t save, your changes will be lost.
-            </AlertDialogDescription>
+            <AlertDialogTitle>
+              {t('app.saveChanges', { name: draft?.source.name })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t('app.lose')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <Button
               variant="outline"
               onClick={() => {
                 const s = pendingSel
                 setPendingSel(null)
-                if (s) go(s)
+                if (s === 'close') closeDraft()
+                else if (s) go(s)
               }}
             >
-              Don’t save
+              {t('common.dontSave')}
             </Button>
             <AlertDialogAction
               onClick={() => {
@@ -447,13 +469,13 @@ function App(): React.JSX.Element {
                 const run = runIdAfterLeave.current // the dialog closing clears it
                 setPendingSel(null)
                 void saveDraft().then((ok) => {
-                  if (!ok || !s) return
+                  if (!ok || !s || s === 'close') return
                   runIdAfterLeave.current = run
                   go(s)
                 })
               }}
             >
-              Save
+              {t('common.save')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

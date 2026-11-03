@@ -11,14 +11,10 @@ export type AssistantState = {
   run: 'daily' | 'interval' | 'manual'
 }
 
-/**
- * The configuration with the new backup added. `complete` is false for "Set up later": the
- * backup keeps what was entered and never runs until it is finished in the editor.
- */
+/** The configuration with the new backup added. */
 export function assistantConfig(
   config: Config,
-  st: AssistantState,
-  complete: boolean
+  st: AssistantState
 ): { next: Config; sourceId: string } {
   const name = st.items[0] ? fileName(st.items[0].path) : 'New backup'
   const source = {
@@ -36,7 +32,7 @@ export function assistantConfig(
         : st.run === 'interval'
           ? ({ kind: 'interval', everyHours: 4 } as const)
           : null,
-    setupComplete: complete
+    setupComplete: true
   }
   return {
     sourceId: source.id,

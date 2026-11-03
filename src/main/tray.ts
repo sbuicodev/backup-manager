@@ -3,7 +3,7 @@ import { app, Menu, nativeImage, Tray } from 'electron'
 import type { Config } from '@shared/schema'
 import type { JobRequest, PairResult } from '@shared/types'
 import type { Scheduler } from './scheduler/scheduler'
-import { trayActions, trayBackupLines, trayStatusLine, type TrayAction } from './os-helpers'
+import { trayActions, trayAttention, trayStatusLine, type TrayAction } from './os-helpers'
 
 export type TrayDeps = {
   scheduler: Scheduler
@@ -50,13 +50,15 @@ export function createTray(deps: TrayDeps): { refresh(): void; destroy(): void }
       Menu.buildFromTemplate([
         { label: line, enabled: false },
         { type: 'separator' },
-        ...trayBackupLines(deps.getConfig(), deps.results(), status, new Date()).map(
-          (l): Electron.MenuItemConstructorOptions => ({
-            label: l.label,
-            click: () => deps.showBackup(l.id)
-          })
-        ),
-        { type: 'separator' },
+        ...((): Electron.MenuItemConstructorOptions[] => {
+          const a = trayAttention(deps.getConfig(), deps.results(), status)
+          if (!a) return []
+          const open = a.id
+          return [
+            { label: a.label, click: () => (open ? deps.showBackup(open) : deps.open()) },
+            { type: 'separator' }
+          ]
+        })(),
         ...trayActions(status).map((a) => items[a]),
         { type: 'separator' },
         { label: 'Open Backup Manager', click: deps.open },

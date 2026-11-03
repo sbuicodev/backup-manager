@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { Source } from '@shared/schema'
+import { itemRel, type Source } from '@shared/schema'
 import type { FileEntry } from '@shared/types'
 
 /** `base` is the archive name without `.zip`; parts are named from it (see parts.ts). */
@@ -37,16 +37,23 @@ export function computeZipTargets(
   }
 
   if (!itemized) return zipEachEntry(files, '', source.zip.looseFiles, level)
-  // Listed files (no '/') each get their own zip; each folder item is laid out like a folder.
+  // Listed files each get their own zip in their subfolder; each folder item is laid out like a
+  // folder, in its own place.
+  const folderRels = source.items.filter((i) => i.kind === 'folder').map((i) => itemRel(i))
   const items = new Map<string, FileEntry[]>()
-  const fileItems: FileEntry[] = []
+  const fileItems = new Map<string, FileEntry[]>()
   for (const f of files) {
-    const slash = f.rel.indexOf('/')
-    if (slash < 0) fileItems.push(f)
-    else items.set(f.rel.slice(0, slash), [...(items.get(f.rel.slice(0, slash)) ?? []), f])
+    const folder = folderRels.find((r) => f.rel.startsWith(`${r}/`))
+    const [map, key] =
+      folder !== undefined
+        ? [items, folder]
+        : [fileItems, f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) : '']
+    map.set(key, [...(map.get(key) ?? []), f])
   }
   return [
-    ...zipEachEntry(fileItems, '', 'individual', level),
+    ...[...fileItems].flatMap(([sub, group]) =>
+      zipEachEntry(group, sub ? `${sub}/` : '', 'individual', level)
+    ),
     ...[...items].flatMap(([item, group]) =>
       zipEachEntry(group, `${item}/`, source.zip.looseFiles, level)
     )

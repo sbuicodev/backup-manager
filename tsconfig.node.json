@@ -11,10 +11,12 @@
   "compilerOptions": {
     "composite": true,
     "strict": true,
+    "resolveJsonModule": true,
     "types": ["electron-vite/node", "node"],
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["src/shared/*"],
+      "@/*": ["src/renderer/src/*"]
     }
   }
 }

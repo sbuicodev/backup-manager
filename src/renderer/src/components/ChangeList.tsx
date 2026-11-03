@@ -1,3 +1,4 @@
+import { t } from '@/i18n'
 import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { ChangeAction, ChangeEntry, ChangePage } from '@shared/types'
@@ -11,18 +12,30 @@ import { cn } from '@/lib/utils'
 const ACTIONS: { id: ChangeAction; label: string; className: string }[] = [
   {
     id: 'added',
-    label: 'Added',
+    label: t('changes.added'),
     className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
   },
-  { id: 'updated', label: 'Updated', className: 'bg-sky-500/15 text-sky-600 dark:text-sky-400' },
-  { id: 'removed', label: 'Removed', className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
+  {
+    id: 'updated',
+    label: t('changes.updated'),
+    className: 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
+  },
+  {
+    id: 'removed',
+    label: t('changes.removed'),
+    className: 'bg-red-500/15 text-red-600 dark:text-red-400'
+  },
   {
     id: 'trashed',
-    label: 'Trashed',
+    label: t('changes.trashed'),
     className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
   },
-  { id: 'deleted', label: 'Deleted', className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
-  { id: 'skipped', label: 'Skipped', className: 'bg-muted text-muted-foreground' }
+  {
+    id: 'deleted',
+    label: t('changes.deleted'),
+    className: 'bg-red-500/15 text-red-600 dark:text-red-400'
+  },
+  { id: 'skipped', label: t('changes.skipped'), className: 'bg-muted text-muted-foreground' }
 ]
 const STYLE = Object.fromEntries(ACTIONS.map((a) => [a.id, a])) as Record<
   ChangeAction,
@@ -106,7 +119,7 @@ export function ChangeList({
         ))}
         <Input
           className="ml-auto h-8 w-60"
-          placeholder="Search paths…"
+          placeholder={t('changes.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -138,18 +151,18 @@ export function ChangeList({
             ))}
             {items.length === 0 && !loading && (
               <tr>
-                <td className="text-muted-foreground px-2 py-3 text-center">No matching changes</td>
+                <td className="text-muted-foreground px-2 py-3 text-center">{t('changes.none')}</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
       <div className="text-muted-foreground flex items-center gap-3 text-xs">
-        {page && `${items.length} of ${page.total}`}
+        {page && t('changes.count', { shown: items.length, total: page.total })}
         {loading && <Loader2 className="size-3 animate-spin" />}
         {page && items.length < page.total && (
           <Button variant="outline" size="sm" onClick={() => void load(items.length)}>
-            Load more
+            {t('changes.more')}
           </Button>
         )}
       </div>

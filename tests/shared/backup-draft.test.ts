@@ -49,7 +49,7 @@ test('saving finishes setup, but not without a drive', () => {
   const d = draftFrom(c, c.sources[0])
   const r = buildNextConfig(c, d)
   expect('next' in r && r.next.sources[0].setupComplete).toBe(true)
-  expect(buildNextConfig(c, { ...d, own: [] })).toEqual({ error: 'Add at least one drive' })
+  expect(buildNextConfig(c, { ...d, own: [] })).toEqual({ error: 'Choose at least one drive' })
 })
 
 test('errorsByGroup puts each validation error beside its section', () => {
@@ -60,7 +60,7 @@ test('errorsByGroup puts each validation error beside its section', () => {
       'sources.0.zip.partLimitBytes: Too small',
       'sources.0.snapshot.keepMin: Too small',
       'sources.0.destinationIds: unknown destination "x"',
-      'Add at least one drive',
+      'Choose at least one drive',
       'destinations.1.path: must be an absolute path'
     ])
   ).toEqual({
@@ -68,6 +68,6 @@ test('errorsByGroup puts each validation error beside its section', () => {
     items: 'add at least one file or folder',
     zip: 'Too small',
     versions: 'Too small',
-    where: 'unknown destination "x" · Add at least one drive'
+    where: 'unknown destination "x" · Choose at least one drive'
   })
 })

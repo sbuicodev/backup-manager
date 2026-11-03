@@ -1,11 +1,14 @@
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { fileName, type Source } from '@shared/schema'
+import { itemRel, storesFlat, type Source } from '@shared/schema'
 import type { FileEntry, SkippedEntry } from '@shared/types'
 import { walkTree } from './walk'
 
 export type SourceFiles = {
-  /** Every file, named `<item>` for a file item and `<item>/<path inside it>` for a folder. */
+  /**
+   * Every file, named `<item>` for a file item and `<item>/<path inside it>` for a folder, where
+   * `<item>` is `[<subfolder>/]<name>`; a backup of one folder names them by their path inside it.
+   */
   files: FileEntry[]
   /** Unreadable entries; a whole missing item is reported under its own name. */
   skipped: SkippedEntry[]
@@ -26,8 +29,19 @@ export async function readSourceItems(
   const skipped: SkippedEntry[] = []
   const paths = new Map<string, { path: string; folder: boolean }>()
   let readable = 0
+  if (storesFlat(source)) {
+    const root = source.items[0].path
+    try {
+      const r = await walkTree(root, { excludes, signal })
+      return { files: r.files, skipped: r.skipped, absOf: (rel) => join(root, ...rel.split('/')) }
+    } catch (err) {
+      signal?.throwIfAborted()
+      void err
+      return null
+    }
+  }
   for (const item of source.items) {
-    const name = fileName(item.path)
+    const name = itemRel(item)
     paths.set(name, { path: item.path, folder: item.kind === 'folder' })
     try {
       if (item.kind === 'folder') {
@@ -50,9 +64,15 @@ export async function readSourceItems(
   if (readable === 0) return null
   files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
   const absOf = (rel: string): string => {
-    const slash = rel.indexOf('/')
-    const top = paths.get(slash < 0 ? rel : rel.slice(0, slash))!
-    return slash < 0 ? top.path : join(top.path, ...rel.slice(slash + 1).split('/'))
+    const exact = paths.get(rel)
+    if (exact) return exact.path
+    // A file inside a folder item: the item whose name starts the path.
+    for (const [name, top] of paths) {
+      if (top.folder && rel.startsWith(`${name}/`)) {
+        return join(top.path, ...rel.slice(name.length + 1).split('/'))
+      }
+    }
+    throw new Error(`no item holds "${rel}"`)
   }
   return { files, skipped, absOf }
 }

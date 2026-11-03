@@ -55,11 +55,36 @@ export const DestinationSchema = z.object({
   ownerSourceId: z.string().nullable().default(null)
 })
 
-/** One file or folder a source backs up; at the destination it is stored under its own name. */
+/**
+ * One file or folder a source backs up; at the destination it is stored under its own name (or
+ * `alias`), inside `folder` when set (a relative path like "Preferences" or "Music/Projects").
+ */
 export const SourceItemSchema = z.object({
   path: AbsolutePath,
-  kind: z.enum(['file', 'folder'])
+  kind: z.enum(['file', 'folder']),
+  folder: z.string().optional(),
+  alias: z.string().optional()
 })
+
+/** An item's name at the destination: its alias, or its own name. */
+export function itemName(item: { path: string; alias?: string }): string {
+  return item.alias ?? fileName(item.path)
+}
+
+/** Where an item lives inside the backup folder: `<folder>/<name>`, or just `<name>`. */
+export function itemRel(item: { path: string; folder?: string; alias?: string }): string {
+  return item.folder ? `${item.folder}/${itemName(item)}` : itemName(item)
+}
+
+/** A subfolder is relative, uses "/" and no segment is empty or starts with a dot. */
+/** An alias is one name: not empty, no "/" or "\\", not starting with a dot. */
+function validAlias(alias: string): boolean {
+  return alias.trim() !== '' && !/[\\/]/.test(alias) && !alias.startsWith('.')
+}
+
+function validSubfolder(folder: string): boolean {
+  return folder.split('/').every((seg) => seg !== '' && !seg.startsWith('.') && !seg.includes('\\'))
+}
 
 /**
  * Configs written before sources became item lists had either `kind: 'folder'` + `path` (the
@@ -133,6 +158,16 @@ export function fileName(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() ?? p
 }
 
+/**
+ * A backup of exactly one folder (with no subfolder or alias) stores that folder's contents
+ * directly in its backup folder; any other backup stores each item under its own name.
+ */
+export function storesFlat(source: Pick<Source, 'items'>): boolean {
+  return source.items.length === 1 && source.items[0].kind === 'folder' &&
+    !source.items[0].folder &&
+    source.items[0].alias === undefined
+}
+
 function isSameOrInside(child: string, parent: string): boolean {
   const c = normPath(child)
   const p = normPath(parent)
@@ -154,10 +189,22 @@ export const ConfigSchema = z
       if (s.items.length === 0 && s.setupComplete) issue('add at least one file or folder')
       const seen = new Map<string, string>()
       for (const it of s.items) {
-        const name = fileName(it.path)
+        if (it.folder !== undefined && !validSubfolder(it.folder)) {
+          issue(`"${it.folder}" isn't a valid subfolder name`)
+          continue
+        }
+        if (it.alias !== undefined && !validAlias(it.alias)) {
+          issue(`"${it.alias}" isn't a valid name`)
+          continue
+        }
+        const name = itemRel(it)
         const prev = seen.get(name.toLowerCase())
         if (prev !== undefined) issue(`"${prev}" and "${it.path}" have the same name "${name}"`)
         seen.set(name.toLowerCase(), it.path)
+        const holder = s.items.find(
+          (o) => o !== it && o.kind === 'folder' && name.toLowerCase().startsWith(`${itemRel(o).toLowerCase()}/`)
+        )
+        if (holder) issue(`"${name}" would be inside the backup of "${holder.path}"`)
         const outer = s.items.find(
           (o) => o !== it && o.kind === 'folder' && isSameOrInside(it.path, o.path)
         )

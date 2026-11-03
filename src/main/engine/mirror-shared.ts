@@ -1,4 +1,4 @@
-import { fileName } from '@shared/schema'
+import { fileName, itemRel } from '@shared/schema'
 import type { FileEntry, JobPlan } from '@shared/types'
 import { MANIFEST_NAME } from './destination'
 import type { JobContext, JobRun } from './job'
@@ -8,19 +8,24 @@ import { buildMatcher } from './walk'
 export const MTIME_TOLERANCE_MS = 2000
 
 /**
- * Mirror layout: each item lives in `<slug>/<item>`, next to these hidden items of the mirror's
- * own. Older backups are moved into place by `settleLayout`; the marker records that it is done.
+ * Mirror layout: each item lives in `<slug>/<item>` — or, for a backup of one folder, that
+ * folder's contents directly in `<slug>/` — next to these hidden items of the mirror's own.
+ * Older backups are moved into place by `settleLayout`; the marker records that it is done.
  *  - layout 1: everything in `<slug>/current/` (a one-folder source's contents)
  *  - layout 2: a one-folder source's contents directly in `<slug>/`
- *  - layout 3: by item (this version)
+ *  - layout 3: by item, or one folder's contents directly ("flat", naming that folder)
  */
 export const TRASH_DIR = '.trash'
 export const LAYOUT_MARKER = '.backup-manager-layout'
 const LEGACY_DIR = 'current'
 /** Staging folder while layout-2 contents move down into `<slug>/<item>/` (kept across crashes). */
 const NESTING_DIR = '.backup-manager-nesting'
-const RESERVED_TOP = new Set([TRASH_DIR, MANIFEST_NAME, LAYOUT_MARKER, NESTING_DIR])
+/** Staging folder while `<slug>/<folder>/` moves up into `<slug>/` (kept across crashes). */
+const UNNESTING_DIR = '.backup-manager-unnesting'
+const RESERVED_TOP = new Set([TRASH_DIR, MANIFEST_NAME, LAYOUT_MARKER, NESTING_DIR, UNNESTING_DIR])
 const LAYOUT_3 = 'mirror layout 3: each file or folder under its own name\n'
+const LAYOUT_3_FLAT = 'mirror layout 3: the contents of one folder directly here: '
+const flatMarker = (name: string): string => `${LAYOUT_3_FLAT}${name}\n`
 
 /** Top-level names in `<slug>/` the mirror must not treat as backed-up files. */
 export function mirrorSkipTop(ctx: JobContext): (name: string) => boolean {
@@ -35,15 +40,13 @@ export function mirrorSkipTop(ctx: JobContext): (name: string) => boolean {
  */
 export function destExcluded(ctx: JobContext, excludes: string[]): (rel: string) => boolean {
   const match = buildMatcher(excludes)
-  const folders = new Set(
-    ctx.source.items.filter((i) => i.kind === 'folder').map((i) => fileName(i.path))
-  )
+  const folders = ctx.source.items.filter((i) => i.kind === 'folder').map((i) => itemRel(i))
   return (rel) => {
     let rest = rel
     if (ctx.itemized) {
-      const slash = rel.indexOf('/')
-      if (slash < 0 || !folders.has(rel.slice(0, slash))) return false
-      rest = rel.slice(slash + 1)
+      const folder = folders.find((f) => rel.startsWith(`${f}/`))
+      if (folder === undefined) return false
+      rest = rel.slice(folder.length + 1)
     }
     if (match(rest, false)) return true
     const parts = rest.split('/')
@@ -74,21 +77,57 @@ export function warnReserved(run: JobRun, files: FileEntry[]): void {
  * (so a plan made before the move stays valid after it).
  */
 export type MirrorLayout = {
-  reads: Array<{ root: string; prefix: string }>
-  move: 'none' | 'mark' | 'current-up' | 'current-into' | 'flat-into'
-  /** Item the old contents belong to (`*-into` moves). */
+  /** `skip`: a top-level name of `root` that is read through another entry. */
+  reads: Array<{ root: string; prefix: string; skip?: string }>
+  move: 'none' | 'mark' | 'current-up' | 'current-into' | 'flat-into' | 'nested-up'
+  /** Item the old contents belong to (`*-into` moves), or that moves up (`nested-up`). */
   into: string | null
+}
+
+/** The marker a mirror of this source has once its layout is settled. */
+function markerFor(ctx: JobContext): string {
+  return ctx.itemized ? LAYOUT_3 : flatMarker(fileName(ctx.source.items[0]?.path ?? ''))
 }
 
 export async function mirrorLayout(ctx: JobContext): Promise<MirrorLayout> {
   const { slug } = ctx.source
   const marker = await ctx.dest.readText(`${slug}/${LAYOUT_MARKER}`)
-  if (marker?.startsWith('mirror layout 3')) {
-    return { reads: [{ root: slug, prefix: '' }], move: 'none', into: null }
+  const here = { reads: [{ root: slug, prefix: '' }], into: null }
+  // A single zip (named after the backup folder, not an item) stays where it is.
+  const moves = ctx.source.packaging !== 'zip-whole'
+  if (marker === markerFor(ctx)) return { ...here, move: 'none' }
+  if (marker?.startsWith(LAYOUT_3_FLAT)) {
+    const was = marker.slice(LAYOUT_3_FLAT.length).trim()
+    return ctx.itemized && moves && was
+      ? {
+          reads: [
+            { root: slug, prefix: `${was}/` },
+            { root: `${slug}/${NESTING_DIR}`, prefix: `${was}/` }
+          ],
+          move: 'flat-into',
+          into: was
+        }
+      : { ...here, move: 'mark' }
   }
-  // Only a source converted from a one-folder config has contents to move down, and a single
-  // zip (named after the backup folder, not the item) stays where it is.
-  const n = ctx.itemized && ctx.source.packaging !== 'zip-whole' ? ctx.source.legacyFlatName : null
+  if (marker?.startsWith('mirror layout 3')) {
+    // By item; a backup now of one folder moves that folder's contents up.
+    const up = ctx.itemized || !moves ? null : fileName(ctx.source.items[0].path)
+    if (up === null) return { ...here, move: 'mark' }
+    const staged = (await ctx.dest.stat(`${slug}/${UNNESTING_DIR}`))?.isDir
+    const nested = (await ctx.dest.stat(`${slug}/${up}`))?.isDir
+    if (!staged && !nested) return { ...here, move: 'mark' }
+    return {
+      reads: [
+        ...(nested ? [{ root: `${slug}/${up}`, prefix: '' }] : []),
+        ...(staged ? [{ root: `${slug}/${UNNESTING_DIR}`, prefix: '' }] : []),
+        { root: slug, prefix: '', ...(nested ? { skip: up } : {}) }
+      ],
+      move: 'nested-up',
+      into: up
+    }
+  }
+  // Only a source converted from a one-folder config has contents to move down.
+  const n = ctx.itemized && moves ? ctx.source.legacyFlatName : null
   if (marker !== null) {
     return n
       ? {
@@ -150,8 +189,23 @@ export async function settleLayout(ctx: JobContext, layout: MirrorLayout): Promi
       await ctx.dest.rename(`${slug}/${e.name}`, `${nest}/${e.name}`)
     }
     await ctx.dest.rename(nest, `${slug}/${layout.into}`)
+  } else if (layout.move === 'nested-up') {
+    // Through a staging folder too, so an entry named like the folder itself still works.
+    const stage = `${slug}/${UNNESTING_DIR}`
+    if (!(await exists(stage))) {
+      await ctx.dest.removePartials(`${slug}/${layout.into}`, true)
+      await ctx.dest.rename(`${slug}/${layout.into}`, stage)
+    }
+    for (const e of await ctx.dest.list(stage)) {
+      if (await exists(`${slug}/${e.name}`)) throw blocked(`${layout.into}/${e.name}`, e.name)
+      await ctx.dest.rename(`${stage}/${e.name}`, `${slug}/${e.name}`)
+    }
+    await ctx.dest.remove(stage)
+    await ctx.dest.remove(`${slug}/${MANIFEST_NAME}`) // its archive list no longer applies
   }
-  if (layout.move !== 'none') await ctx.dest.writeTextAtomic(`${slug}/${LAYOUT_MARKER}`, LAYOUT_3)
+  if (layout.move !== 'none') {
+    await ctx.dest.writeTextAtomic(`${slug}/${LAYOUT_MARKER}`, markerFor(ctx))
+  }
 }
 
 /**

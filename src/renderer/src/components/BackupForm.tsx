@@ -1,14 +1,5 @@
 import { useState } from 'react'
-import {
-  File as FileIcon,
-  FilePlus,
-  Folder,
-  FolderPlus,
-  Pencil,
-  Plus,
-  Trash2,
-  X
-} from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import {
   defaultModeFor,
   fileName,
@@ -17,10 +8,10 @@ import {
   type Destination,
   type Schedule,
   type Source,
-  type SourceItem,
   type Weekday
 } from '@shared/schema'
 import { DestinationDialog } from '@/components/DestinationDialog'
+import { ItemsEditor } from '@/components/ItemsEditor'
 import { SizeInput } from '@/components/SizeInput'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -36,20 +27,12 @@ import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Toggle } from '@/components/ui/toggle'
-import { api } from '@/lib/api'
+import { t } from '@/i18n'
 import type { Draft } from '@/lib/backup-draft'
 import { shortPath } from '@/lib/summary'
 import { cn } from '@/lib/utils'
 
-const DAYS: { id: Weekday; label: string }[] = [
-  { id: 'mon', label: 'Mon' },
-  { id: 'tue', label: 'Tue' },
-  { id: 'wed', label: 'Wed' },
-  { id: 'thu', label: 'Thu' },
-  { id: 'fri', label: 'Fri' },
-  { id: 'sat', label: 'Sat' },
-  { id: 'sun', label: 'Sun' }
-]
+const DAYS: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
 function defaultSchedule(kind: Schedule['kind']): Schedule {
   if (kind === 'interval') return { kind, everyHours: 4 }
@@ -160,7 +143,7 @@ function Days({
         value={value ?? ''}
         onChange={(e) => onChange(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
       />
-      <span className="text-muted-foreground">days</span>
+      <span className="text-muted-foreground">{t('form.days')}</span>
       <label className="ml-2 flex items-center gap-2">
         <Checkbox
           checked={value === null}
@@ -172,77 +155,35 @@ function Days({
   )
 }
 
-/** The list of files and folders, with the per-OS Add buttons and a drop area. */
-export function ItemsEditor({
-  items,
-  onChange
-}: {
-  items: SourceItem[]
-  onChange: (items: SourceItem[]) => void
-}): React.JSX.Element {
-  const [over, setOver] = useState(false)
-  // macOS can pick files and folders in one dialog; Windows and Linux need one for each.
-  const mixedPicker = api.app.platform === 'darwin'
-  const add = (picked: SourceItem[]): void => {
-    const fresh = picked.filter((p) => !items.some((i) => i.path === p.path))
-    if (fresh.length > 0) onChange([...items, ...fresh])
-  }
-  const pick = async (mode: 'any' | 'files' | 'folders'): Promise<void> =>
-    add(await api.dialog.pickItems(mode, items.at(-1)?.path))
+/** A small subheading inside the drives list. */
+function DriveHeading({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <div
-      className={cn('grid min-w-0', over && 'bg-accent/40')}
-      onDragOver={(e) => {
-        e.preventDefault()
-        setOver(true)
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setOver(false)
-        const paths = [...e.dataTransfer.files].map((f) => api.files.pathOf(f)).filter(Boolean)
-        if (paths.length > 0) void api.dialog.statItems(paths).then(add)
-      }}
-    >
-      {items.map((it) => {
-        const Icon = it.kind === 'folder' ? Folder : FileIcon
-        const name = fileName(it.path)
-        return (
-          <div key={it.path} className="flex min-w-0 items-center gap-2 border-b px-3 py-2 text-sm">
-            <Icon className="text-muted-foreground size-4 shrink-0" />
-            <span className="max-w-[60%] shrink-0 truncate font-medium">{name}</span>
-            <span className="text-muted-foreground min-w-0 flex-1 truncate text-right font-mono text-xs">
-              {shortPath(it.path)}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              aria-label={`Remove ${name}`}
-              onClick={() => onChange(items.filter((x) => x.path !== it.path))}
-            >
-              <X />
-            </Button>
-          </div>
-        )
-      })}
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-        {mixedPicker ? (
-          <Button variant="outline" size="sm" onClick={() => void pick('any')}>
-            <Plus /> Add…
-          </Button>
-        ) : (
-          <>
-            <Button variant="outline" size="sm" onClick={() => void pick('folders')}>
-              <FolderPlus /> Add folder…
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void pick('files')}>
-              <FilePlus /> Add files…
-            </Button>
-          </>
-        )}
-        <span className="text-muted-foreground text-xs">or drop files and folders here</span>
-      </div>
+    <div className="text-muted-foreground bg-muted/30 px-3 pt-2 pb-1 text-[11px] font-medium">
+      {children}
+    </div>
+  )
+}
+
+/** One drive in the Where list: its checkbox, name and path. */
+function DriveRow({
+  dest,
+  children,
+  actions
+}: {
+  dest: Destination
+  children: React.ReactNode
+  actions?: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="flex min-w-0 items-center gap-2 px-3 py-2 text-sm">
+      <label className="flex min-w-0 flex-1 items-center gap-2">
+        {children}
+        <span className="truncate font-medium">{dest.name}</span>
+        <span className="text-muted-foreground min-w-0 flex-1 truncate text-right font-mono text-xs">
+          {shortPath(dest.path)}
+        </span>
+      </label>
+      {actions}
     </div>
   )
 }
@@ -256,11 +197,14 @@ export function BackupForm({
   draft,
   onChange,
   errors = {},
-  isNew = false
+  isNew = false,
+  addShared
 }: {
   config: Config
   draft: Draft
   onChange: (d: Draft) => void
+  /** Saves a new shared destination to the configuration. */
+  addShared: (d: Destination) => Promise<boolean>
   errors?: Record<string, string>
   isNew?: boolean
 }): React.JSX.Element {
@@ -274,17 +218,21 @@ export function BackupForm({
   const setName = (name: string): void =>
     patch(slugTouched ? { name } : { name, slug: slugify(name, otherSlugs) })
   const shared = config.destinations.filter((d) => d.ownerSourceId === null)
-  const explicit = s.destinationIds === 'all' ? null : s.destinationIds
+  const sharedOn = (id: string): boolean =>
+    s.destinationIds === 'all' || s.destinationIds.includes(id)
+  const drivesOn = [...shared.map((d) => sharedOn(d.id)), ...draft.own.map((d) => d.enabled)]
+  const allOn = drivesOn.length > 0 && drivesOn.every(Boolean)
+  const someOn = drivesOn.some(Boolean)
   const zip = s.packaging !== 'copy'
   const hasFolder = s.items.some((i) => i.kind === 'folder')
 
   return (
     <div className="grid gap-6">
-      <Group title="General" id="general" error={errors.general}>
-        <Row label="Name">
+      <Group title={t('form.general')} id="general" error={errors.general}>
+        <Row label={t('form.name')}>
           <Input className="w-64" value={s.name} onChange={(e) => setName(e.target.value)} />
         </Row>
-        <Row label="Folder name at destination">
+        <Row label={t('form.folderName')}>
           <Input
             className="w-64"
             value={s.slug}
@@ -296,7 +244,7 @@ export function BackupForm({
         </Row>
       </Group>
 
-      <Group title="What" id="items" error={errors.items}>
+      <Group title={t('form.what')} id="items" error={errors.items}>
         <ItemsEditor
           items={s.items}
           onChange={(items) => {
@@ -311,94 +259,99 @@ export function BackupForm({
         />
       </Group>
 
-      <Group title="Where" id="where" error={errors.where}>
-        <Row label="All shared drives">
-          <Switch
-            checked={explicit === null}
-            onCheckedChange={(on) =>
-              patch({ destinationIds: on ? 'all' : shared.map((d) => d.id) })
+      <Group title={t('form.where')} id="where" error={errors.where}>
+        <label className="flex min-w-0 items-center gap-2 px-3 py-2.5 text-sm font-medium">
+          <Checkbox
+            checked={allOn ? true : someOn ? 'indeterminate' : false}
+            onCheckedChange={() =>
+              onChange({
+                ...draft,
+                source: { ...s, destinationIds: allOn ? [] : 'all' },
+                own: draft.own.map((x) => ({ ...x, enabled: !allOn }))
+              })
             }
           />
-        </Row>
-        {explicit !== null &&
-          shared.map((d) => (
-            <label key={d.id} className="flex min-w-0 items-center gap-2 px-3 py-2 pl-6 text-sm">
-              <Checkbox
-                checked={explicit.includes(d.id)}
-                onCheckedChange={(c) =>
-                  patch({
-                    destinationIds:
-                      c === true ? [...explicit, d.id] : explicit.filter((id) => id !== d.id)
-                  })
-                }
-              />
-              <span className="font-medium">{d.name}</span>
-              <span className="text-muted-foreground min-w-0 flex-1 truncate text-right font-mono text-xs">
-                {shortPath(d.path)}
-              </span>
-            </label>
-          ))}
+          {t('form.selectAll')}
+        </label>
+        {shared.length > 0 && <DriveHeading>{t('form.shared')}</DriveHeading>}
+        {shared.map((d) => (
+          <DriveRow key={d.id} dest={d}>
+            <Checkbox
+              checked={sharedOn(d.id)}
+              onCheckedChange={(c) => {
+                const ids = shared.filter((x) => sharedOn(x.id)).map((x) => x.id)
+                patch({
+                  destinationIds: c === true ? [...ids, d.id] : ids.filter((id) => id !== d.id)
+                })
+              }}
+            />
+          </DriveRow>
+        ))}
+        {draft.own.length > 0 && <DriveHeading>{t('form.custom')}</DriveHeading>}
         {draft.own.map((d) => (
-          <div key={d.id} className="flex min-w-0 items-center gap-2 px-3 py-2 text-sm">
-            <Switch
+          <DriveRow
+            key={d.id}
+            dest={d}
+            actions={
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  aria-label={t('form.edit', { name: d.name })}
+                  onClick={() => setEditingDest(d)}
+                >
+                  <Pencil />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  aria-label={t('form.remove', { name: d.name })}
+                  onClick={() =>
+                    onChange({ ...draft, own: draft.own.filter((x) => x.id !== d.id) })
+                  }
+                >
+                  <Trash2 />
+                </Button>
+              </>
+            }
+          >
+            <Checkbox
               checked={d.enabled}
-              aria-label={`Use ${d.name}`}
-              onCheckedChange={(enabled) =>
+              onCheckedChange={(c) =>
                 onChange({
                   ...draft,
-                  own: draft.own.map((x) => (x.id === d.id ? { ...x, enabled } : x))
+                  own: draft.own.map((x) => (x.id === d.id ? { ...x, enabled: c === true } : x))
                 })
               }
             />
-            <span className="font-medium">{d.name}</span>
-            <span className="text-muted-foreground text-xs">only this backup</span>
-            <span className="text-muted-foreground min-w-0 flex-1 truncate text-right font-mono text-xs">
-              {shortPath(d.path)}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              aria-label={`Edit ${d.name}`}
-              onClick={() => setEditingDest(d)}
-            >
-              <Pencil />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              aria-label={`Remove ${d.name}`}
-              onClick={() => onChange({ ...draft, own: draft.own.filter((x) => x.id !== d.id) })}
-            >
-              <Trash2 />
-            </Button>
-          </div>
+          </DriveRow>
         ))}
         <div className="px-3 py-2">
           <Button variant="outline" size="sm" onClick={() => setEditingDest('new')}>
-            <Plus /> Add a drive for this backup only…
+            <Plus /> {t('form.addCustom')}
           </Button>
         </div>
       </Group>
 
-      <Group title="Schedule" id="schedule">
-        <Row label="Run">
+      <Group title={t('form.schedule')} id="schedule">
+        <Row label={t('form.backUp')}>
           <Menu
             value={s.schedule?.kind ?? 'none'}
             onChange={(v) =>
               patch({ schedule: v === 'none' ? null : defaultSchedule(v as Schedule['kind']) })
             }
             options={[
-              { id: 'interval', label: 'Every few hours' },
-              { id: 'daily', label: 'Every day' },
-              { id: 'weekly', label: 'Every week' },
-              { id: 'none', label: 'Only when I click Back up now' }
+              { id: 'interval', label: t('form.interval') },
+              { id: 'daily', label: t('form.daily') },
+              { id: 'weekly', label: t('form.weekly') },
+              { id: 'none', label: t('form.manual') }
             ]}
           />
         </Row>
         {s.schedule?.kind === 'interval' && (
-          <Row label="Every">
+          <Row label={t('form.every')}>
             <div className="flex items-center gap-2">
               <Input
                 type="number"
@@ -414,31 +367,31 @@ export function BackupForm({
                   })
                 }
               />
-              <span className="text-muted-foreground">hours</span>
+              <span className="text-muted-foreground">{t('form.hours')}</span>
             </div>
           </Row>
         )}
         {s.schedule?.kind === 'weekly' && (
-          <Row label="On">
+          <Row label={t('form.on')}>
             <div className="flex gap-1">
               {DAYS.map((d) => {
                 const sched = s.schedule as Extract<Schedule, { kind: 'weekly' }>
                 return (
                   <Toggle
-                    key={d.id}
+                    key={d}
                     size="sm"
                     variant="outline"
-                    pressed={sched.days.includes(d.id)}
+                    pressed={sched.days.includes(d)}
                     onPressedChange={(on) =>
                       patch({
                         schedule: {
                           ...sched,
-                          days: on ? [...sched.days, d.id] : sched.days.filter((x) => x !== d.id)
+                          days: on ? [...sched.days, d] : sched.days.filter((x) => x !== d)
                         }
                       })
                     }
                   >
-                    {d.label}
+                    {t(`days.${d}`)}
                   </Toggle>
                 )
               })}
@@ -446,7 +399,7 @@ export function BackupForm({
           </Row>
         )}
         {s.schedule && s.schedule.kind !== 'interval' && (
-          <Row label="At">
+          <Row label={t('form.at')}>
             <Input
               type="time"
               className="w-32"
@@ -460,7 +413,7 @@ export function BackupForm({
           </Row>
         )}
         {s.schedule && (
-          <Row label="Retry when a drive comes back">
+          <Row label={t('form.retry')}>
             <Switch
               checked={s.retryWhenAvailable}
               onCheckedChange={(retryWhenAvailable) => patch({ retryWhenAvailable })}
@@ -469,8 +422,8 @@ export function BackupForm({
         )}
       </Group>
 
-      <Group title="Versions" id="versions">
-        <Row label="Keep">
+      <Group title={t('form.versions')} id="versions">
+        <Row label={t('form.keep')}>
           <Menu
             value={s.mode}
             onChange={(mode) => {
@@ -478,14 +431,14 @@ export function BackupForm({
               patch({ mode })
             }}
             options={[
-              { id: 'mirror', label: 'An up-to-date copy' },
-              { id: 'snapshot', label: 'Dated versions' }
+              { id: 'mirror', label: t('form.mirror') },
+              { id: 'snapshot', label: t('form.snapshot') }
             ]}
           />
         </Row>
         {s.mode === 'snapshot' && (
           <>
-            <Row label="Always keep at least">
+            <Row label={t('form.keepAtLeast')}>
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
@@ -501,13 +454,13 @@ export function BackupForm({
                     })
                   }
                 />
-                <span className="text-muted-foreground">versions</span>
+                <span className="text-muted-foreground">{t('form.versionsUnit')}</span>
               </div>
             </Row>
-            <Row label="Delete versions older than">
+            <Row label={t('form.deleteAfter')}>
               <Days
                 value={s.snapshot.maxAgeDays}
-                noneLabel="Never"
+                noneLabel={t('form.never')}
                 onChange={(maxAgeDays) => patch({ snapshot: { ...s.snapshot, maxAgeDays } })}
               />
             </Row>
@@ -516,23 +469,23 @@ export function BackupForm({
       </Group>
 
       {s.mode === 'mirror' && (
-        <Group title="Deletions" id="deletions">
-          <Row label="When a file is deleted">
+        <Group title={t('form.deletions')} id="deletions">
+          <Row label={t('form.deletedItems')}>
             <Menu
               value={s.mirror.deletion}
               onChange={(deletion) => patch({ mirror: { ...s.mirror, deletion } })}
               options={[
-                { id: 'trash', label: 'Move it to the trash' },
-                { id: 'exact', label: 'Delete it from the backup' },
-                { id: 'never', label: 'Keep it in the backup' }
+                { id: 'trash', label: t('form.trash') },
+                { id: 'exact', label: t('form.exact') },
+                { id: 'never', label: t('form.keepDeleted') }
               ]}
             />
           </Row>
           {s.mirror.deletion === 'trash' && (
-            <Row label="Empty the trash after">
+            <Row label={t('form.emptyTrash')}>
               <Days
                 value={s.mirror.trashRetentionDays}
-                noneLabel="Never"
+                noneLabel={t('form.never')}
                 onChange={(trashRetentionDays) =>
                   patch({ mirror: { ...s.mirror, trashRetentionDays } })
                 }
@@ -543,12 +496,8 @@ export function BackupForm({
       )}
 
       {hasFolder && (
-        <Group title="Exclusions" id="exclusions">
-          <Row
-            label="Skip files matching"
-            hint="One pattern per line, like *.tmp or node_modules/"
-            stack
-          >
+        <Group title={t('form.exclusions')} id="exclusions">
+          <Row label={t('form.skip')} hint={t('form.skipHint')} stack>
             <Textarea
               rows={3}
               className="font-mono text-xs"
@@ -557,10 +506,7 @@ export function BackupForm({
               onChange={(e) => onChange({ ...draft, excludes: e.target.value })}
             />
           </Row>
-          <Row
-            label="Also use the global exclusions"
-            hint={config.globalExcludes.join(', ') || 'none'}
-          >
+          <Row label={t('form.global')} hint={config.globalExcludes.join(', ') || t('form.none')}>
             <Switch
               checked={s.useGlobalExcludes}
               onCheckedChange={(useGlobalExcludes) => patch({ useGlobalExcludes })}
@@ -569,24 +515,24 @@ export function BackupForm({
         </Group>
       )}
 
-      <Group title="Zip" id="zip">
-        <Row label="Store as">
+      <Group title={t('form.zip')} id="zip">
+        <Row label={t('form.saveAs')}>
           <Menu
             value={s.packaging}
             onChange={(packaging) =>
               patch(modeTouched ? { packaging } : { packaging, mode: defaultModeFor(packaging) })
             }
             options={[
-              { id: 'copy', label: 'Plain files' },
-              { id: 'zip-whole', label: 'One zip' },
-              { id: 'zip-children', label: 'A zip per item' }
+              { id: 'copy', label: t('packaging.copy') },
+              { id: 'zip-whole', label: t('packaging.zip-whole') },
+              { id: 'zip-children', label: t('packaging.zip-children') }
             ]}
           />
         </Row>
         {zip && (
           <Row
-            label={`Compression: ${s.zip.level}`}
-            hint="0 stores files as they are (fastest), 9 compresses most"
+            label={t('form.compression', { level: s.zip.level })}
+            hint={t('form.compressionHint')}
           >
             <Slider
               className="w-64"
@@ -599,45 +545,45 @@ export function BackupForm({
           </Row>
         )}
         {s.packaging === 'zip-children' && (
-          <Row label="Loose files in a folder">
+          <Row label={t('form.looseFiles')}>
             <Menu
               value={s.zip.looseFiles}
               onChange={(looseFiles) => patch({ zip: { ...s.zip, looseFiles } })}
               options={[
-                { id: 'individual', label: 'One zip per file' },
-                { id: 'bundle', label: 'All together in _files.zip' }
+                { id: 'individual', label: t('form.individual') },
+                { id: 'bundle', label: t('form.bundle') }
               ]}
             />
           </Row>
         )}
         {zip && (
-          <Row label="Split archives larger than" hint="Each part opens on its own">
+          <Row label={t('form.splitAt')} hint={t('form.splitHint')}>
             <SizeInput
               value={s.zip.partLimitBytes}
               onChange={(partLimitBytes) => patch({ zip: { ...s.zip, partLimitBytes } })}
-              offLabel="Never split"
+              offLabel={t('form.neverSplit')}
               defaultBytes={2 * 1024 ** 3}
             />
           </Row>
         )}
         {zip && s.zip.partLimitBytes !== null && (
-          <Row label="Files larger than the limit">
+          <Row label={t('form.larger')}>
             <Menu
               value={s.zip.oversized}
               onChange={(oversized) => patch({ zip: { ...s.zip, oversized } })}
               options={[
-                { id: 'own-part', label: 'Keep whole in their own part' },
-                { id: 'chunk', label: 'Split into raw chunks' }
+                { id: 'own-part', label: t('form.ownPart') },
+                { id: 'chunk', label: t('form.chunk') }
               ]}
             />
           </Row>
         )}
         {zip && s.zip.partLimitBytes !== null && s.zip.oversized === 'chunk' && (
-          <Row label="Chunk size">
+          <Row label={t('form.chunkSize')}>
             <SizeInput
               value={s.zip.chunkBytes}
               onChange={(chunkBytes) => patch({ zip: { ...s.zip, chunkBytes } })}
-              offLabel="Same as the limit"
+              offLabel={t('form.sameAsParts')}
               defaultBytes={s.zip.partLimitBytes}
             />
           </Row>
@@ -647,9 +593,14 @@ export function BackupForm({
       {editingDest && (
         <DestinationDialog
           initial={editingDest === 'new' ? null : editingDest}
-          ownerName={s.name.trim() || 'this backup'}
-          ownerSourceId={s.id}
+          owner={{ id: s.id, name: s.name.trim() || t('common.newBackup') }}
           onSave={async (d) => {
+            if (d.ownerSourceId === null) {
+              // A shared destination is saved right away, like one made from the sidebar.
+              if (!(await addShared(d))) return false
+              if (s.destinationIds !== 'all') patch({ destinationIds: [...s.destinationIds, d.id] })
+              return true
+            }
             onChange({
               ...draft,
               own: draft.own.some((x) => x.id === d.id)

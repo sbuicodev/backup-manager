@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  type SourceItem,
   defaultConfig,
   defaultModeFor,
   newDestination,
@@ -460,5 +461,64 @@ describe('not set up', () => {
     expect(errorsOf(cfgWith((c) => c.sources.push({ ...draft, setupComplete: true })))).not.toEqual(
       []
     )
+  })
+})
+
+describe('item subfolders', () => {
+  const withItems = (items: SourceItem[]) => {
+    const c = defaultConfig()
+    c.destinations.push({ ...newDestination('/d', 'D'), id: 'd1' })
+    c.sources.push({ ...newSource('/a', 'A', []), items })
+    return validateConfig(c)
+  }
+  const errors = (r: ReturnType<typeof validateConfig>): string =>
+    r.ok ? '' : r.errors.join(' | ')
+  test('a nested subfolder is fine', () => {
+    expect(withItems([{ path: '/x/Logic', kind: 'folder', folder: 'Music/Projects' }]).ok).toBe(true)
+  })
+  test.each(['.hidden', '../up', 'a/../b', 'a//b', '/abs', 'a\\b'])('"%s" is refused', (folder) => {
+    expect(errors(withItems([{ path: '/x/a.txt', kind: 'file', folder }]))).toMatch(/subfolder/)
+  })
+  test('an item can’t sit where another item’s contents go', () => {
+    expect(
+      errors(
+        withItems([
+          { path: '/x/Prefs', kind: 'folder' },
+          { path: '/y/a.txt', kind: 'file', folder: 'Prefs' }
+        ])
+      )
+    ).toMatch(/inside/)
+  })
+  test('the same name is fine in different subfolders', () => {
+    expect(
+      withItems([
+        { path: '/x/a.txt', kind: 'file', folder: 'One' },
+        { path: '/y/a.txt', kind: 'file', folder: 'Two' }
+      ]).ok
+    ).toBe(true)
+  })
+})
+
+describe('item aliases', () => {
+  const withItems = (items: SourceItem[]) => {
+    const c = defaultConfig()
+    c.destinations.push({ ...newDestination('/d', 'D'), id: 'd1' })
+    c.sources.push({ ...newSource('/a', 'A', []), items })
+    return validateConfig(c)
+  }
+  test('an alias may contain spaces', () => {
+    expect(withItems([{ path: '/x/Logic', kind: 'folder', alias: 'My Projects' }]).ok).toBe(true)
+  })
+  test.each(['', '.x', 'a/b', '..'])('"%s" is refused', (alias) => {
+    const r = withItems([{ path: '/x/Logic', kind: 'folder', alias }])
+    expect(r.ok ? '' : r.errors.join()).toMatch(/name/)
+  })
+  test('two items can’t share a name through an alias', () => {
+    expect(
+      withItems([
+        { path: '/x/Logic', kind: 'folder', alias: 'a.txt' },
+        { path: '/y/a.txt', kind: 'file' }
+      ]).ok
+    ).toBe(false)
   })
 })

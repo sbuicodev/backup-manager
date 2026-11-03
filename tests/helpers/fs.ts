@@ -31,13 +31,19 @@ export async function makeTree(root: string, spec: TreeSpec): Promise<void> {
  * Reads all files under root into { posixRel: content }. The mirror's layout marker is
  * bookkeeping, not backed-up content, so it is left out.
  */
-export async function readTree(root: string): Promise<Record<string, string>> {
+/** Every file under `root` by relative path; `hidden: false` leaves out dot-named entries. */
+export async function readTree(
+  root: string,
+  { hidden = true } = {}
+): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   const entries = await readdir(root, { recursive: true, withFileTypes: true })
   for (const e of entries) {
     if (!e.isFile() || e.name === '.backup-manager-layout') continue
     const abs = join(e.parentPath, e.name)
-    out[relative(root, abs).split('\\').join('/')] = await readFile(abs, 'utf8')
+    const rel = relative(root, abs).split('\\').join('/')
+    if (!hidden && rel.split('/').some((p) => p.startsWith('.'))) continue
+    out[rel] = await readFile(abs, 'utf8')
   }
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)))
 }

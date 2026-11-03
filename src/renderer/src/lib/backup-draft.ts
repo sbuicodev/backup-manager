@@ -1,3 +1,4 @@
+import { t } from '@/i18n'
 import type { Config, Destination, Source } from '@shared/schema'
 
 /** A backup being edited: nothing is saved until `buildNextConfig` is used on Save. */
@@ -43,7 +44,7 @@ export function buildNextConfig(
   config: Config,
   draft: Draft
 ): { next: Config } | { error: string } {
-  if (drivesOf(config, draft).length === 0) return { error: 'Add at least one drive' }
+  if (drivesOf(config, draft).length === 0) return { error: t('draft.addDrive') }
   const source: Source = {
     ...draft.source,
     name: draft.source.name.trim(),
@@ -83,14 +84,14 @@ const GROUP_OF: Record<string, string> = {
 
 /**
  * Validation errors keyed by form section ("sources.0.zip.level: …" → zip). Errors that don't
- * concern this backup's fields go to "general"; "Add at least one drive" goes to "where".
+ * concern this backup's fields go to "general"; the missing-drive error goes to "where".
  */
 export function errorsByGroup(errors: string[]): Record<string, string> {
   const out: Record<string, string[]> = {}
   for (const e of errors) {
     const m = /^sources\.\d+\.(\w+)[^:]*: (.*)$/s.exec(e)
     const group =
-      e === 'Add at least one drive' ? 'where' : m && GROUP_OF[m[1]] ? GROUP_OF[m[1]] : 'general'
+      e === t('draft.addDrive') ? 'where' : m && GROUP_OF[m[1]] ? GROUP_OF[m[1]] : 'general'
     ;(out[group] ??= []).push(m && GROUP_OF[m[1]] ? m[2] : e)
   }
   return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.join(' · ')]))

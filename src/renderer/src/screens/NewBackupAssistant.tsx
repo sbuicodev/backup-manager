@@ -1,8 +1,10 @@
+import { t } from '@/i18n'
 import { useState } from 'react'
 import { Check, FolderPlus, HardDrive } from 'lucide-react'
 import { toast } from 'sonner'
-import { fileName, newDestination, type Config } from '@shared/schema'
-import { ItemsEditor } from '@/components/BackupForm'
+import type { Config, Destination } from '@shared/schema'
+import { ItemsEditor } from '@/components/ItemsEditor'
+import { DestinationDialog } from '@/components/DestinationDialog'
 import { Button } from '@/components/ui/button'
 import type { UseConfig } from '@/hooks/useConfig'
 import { api } from '@/lib/api'
@@ -10,7 +12,10 @@ import { assistantConfig, type AssistantState } from '@/lib/assistant'
 import { shortPath } from '@/lib/summary'
 import { cn } from '@/lib/utils'
 
-const STEPS = ['What to back up', 'Where it goes', 'How and when'] as const
+/** Stand-in owner id for destinations made before the backup exists; replaced on create. */
+const PENDING_OWNER = 'new-backup'
+
+const STEPS = t('assistant.steps', { returnObjects: true }) as string[]
 
 function Tile({
   selected,
@@ -45,17 +50,19 @@ function Tile({
   )
 }
 
-/** A new backup in three steps; Set up later keeps what was entered without running it. */
+/** A new backup in three steps; Cancel leaves without creating anything. */
 export function NewBackupAssistant({
   cfg,
   config,
   availability,
-  onDone
+  onDone,
+  onCancel
 }: {
   cfg: UseConfig
   config: Config
   availability: Record<string, boolean>
   onDone: (sourceId: string) => void
+  onCancel: () => void
 }): React.JSX.Element {
   const [step, setStep] = useState(0)
   const [st, setSt] = useState<AssistantState>({
@@ -73,27 +80,37 @@ export function NewBackupAssistant({
         ? st.driveIds.length + st.newDrives.length > 0
         : true
 
-  const finish = async (complete: boolean): Promise<void> => {
-    const { next, sourceId } = assistantConfig(config, st, complete)
+  const finish = async (): Promise<void> => {
+    const { next, sourceId } = assistantConfig(config, st)
     const errors = await cfg.save(next)
     if (errors) {
-      toast.error('Couldn’t create the backup', { description: errors.join('\n') })
+      toast.error(t('assistant.createFailed'), { description: errors.join('\n') })
       return
     }
     onDone(sourceId)
-    if (complete && st.run !== 'manual') void api.run.start([sourceId])
+    if (st.run !== 'manual') void api.run.start([sourceId])
   }
-  const otherFolder = async (): Promise<void> => {
-    const p = await api.dialog.pickFolder()
-    if (!p) return
-    setSt({ ...st, newDrives: [...st.newDrives, newDestination(p, fileName(p))] })
+  const [addingDest, setAddingDest] = useState(false)
+  // The same destination sheet as everywhere else: shared ones are saved right away.
+  const addDestination = async (d: Destination): Promise<boolean> => {
+    if (d.ownerSourceId !== null) {
+      setSt({ ...st, newDrives: [...st.newDrives, d] })
+      return true
+    }
+    const errors = await cfg.save({ ...config, destinations: [...config.destinations, d] })
+    if (errors) {
+      toast.error(t('common.couldNotSave'), { description: errors.join('\n') })
+      return false
+    }
+    setSt({ ...st, driveIds: [...st.driveIds, d.id] })
+    return true
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-xl gap-5 pt-6">
+    <div className="grid w-full min-w-0 gap-5">
       <div>
         <div className="text-muted-foreground text-xs">
-          Step {step + 1} of {STEPS.length}
+          {t('assistant.step', { n: step + 1, total: STEPS.length })}
         </div>
         <h1 className="text-xl font-semibold">{STEPS[step]}</h1>
       </div>
@@ -114,7 +131,9 @@ export function NewBackupAssistant({
                 selected={on}
                 icon={<HardDrive className="text-muted-foreground size-4 shrink-0" />}
                 title={d.name}
-                hint={availability[d.id] === false ? 'not connected' : shortPath(d.path)}
+                hint={
+                  availability[d.id] === false ? t('assistant.notConnected') : shortPath(d.path)
+                }
                 onClick={() =>
                   setSt({
                     ...st,
@@ -130,16 +149,16 @@ export function NewBackupAssistant({
               selected
               icon={<HardDrive className="text-muted-foreground size-4 shrink-0" />}
               title={d.name}
-              hint={`${shortPath(d.path)} · only this backup`}
+              hint={t('assistant.otherOnly', { path: shortPath(d.path) })}
               onClick={() => setSt({ ...st, newDrives: st.newDrives.filter((x) => x.id !== d.id) })}
             />
           ))}
           <Tile
             selected={false}
             icon={<FolderPlus className="text-muted-foreground size-4 shrink-0" />}
-            title="Other folder…"
-            hint="A folder on any drive, used by this backup only"
-            onClick={() => void otherFolder()}
+            title={t('assistant.otherFolder')}
+            hint={t('assistant.otherFolderHint')}
+            onClick={() => setAddingDest(true)}
           />
         </div>
       )}
@@ -149,25 +168,27 @@ export function NewBackupAssistant({
           <div className="grid gap-2">
             <Tile
               selected={st.mode === 'mirror'}
-              title="Keep an up-to-date copy"
-              hint="A mirror of your files, updated with what changed"
+              title={t('assistant.mirror')}
+              hint={t('assistant.mirrorHint')}
               onClick={() => setSt({ ...st, mode: 'mirror' })}
             />
             <Tile
               selected={st.mode === 'snapshot'}
-              title="Keep dated versions"
-              hint="A new copy on each run; the last 10 are always kept"
+              title={t('assistant.snapshot')}
+              hint={t('assistant.snapshotHint')}
               onClick={() => setSt({ ...st, mode: 'snapshot' })}
             />
           </div>
           <div className="grid gap-2">
-            <div className="text-muted-foreground px-1 text-xs font-medium">Run it</div>
+            <div className="text-muted-foreground px-1 text-xs font-medium">
+              {t('assistant.run')}
+            </div>
             <div className="bg-card divide-y overflow-hidden rounded-lg border">
               {(
                 [
-                  ['daily', 'Every day at 22:00'],
-                  ['interval', 'Every 4 hours'],
-                  ['manual', 'Only when I click Back up now']
+                  ['daily', t('assistant.daily')],
+                  ['interval', t('assistant.interval')],
+                  ['manual', t('assistant.manual')]
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -182,27 +203,35 @@ export function NewBackupAssistant({
                 </button>
               ))}
             </div>
-            <p className="text-muted-foreground px-1 text-xs">You can change more options later.</p>
+            <p className="text-muted-foreground px-1 text-xs">{t('assistant.later')}</p>
           </div>
         </div>
       )}
 
+      {addingDest && (
+        <DestinationDialog
+          initial={null}
+          owner={{ id: PENDING_OWNER, name: t('common.newBackup') }}
+          onSave={addDestination}
+          onClose={() => setAddingDest(false)}
+        />
+      )}
       <div className="flex items-center gap-2 border-t pt-4">
-        <Button variant="ghost" onClick={() => void finish(false)}>
-          Set up later
+        <Button variant="ghost" onClick={onCancel}>
+          {t('common.cancel')}
         </Button>
         <div className="ml-auto flex gap-2">
           {step > 0 && (
             <Button variant="outline" onClick={() => setStep(step - 1)}>
-              Back
+              {t('common.back')}
             </Button>
           )}
           {step < STEPS.length - 1 ? (
             <Button disabled={!canContinue} onClick={() => setStep(step + 1)}>
-              Continue
+              {t('common.continue')}
             </Button>
           ) : (
-            <Button onClick={() => void finish(true)}>Create backup</Button>
+            <Button onClick={() => void finish()}>{t('assistant.create')}</Button>
           )}
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { defaultConfig, newDestination, newSource, type Settings } from '@shared/schema'
-import type { RunStatus, SchedulerStatus } from '@shared/types'
+import type { PairResult, RunStatus, SchedulerStatus } from '@shared/types'
 import {
   TOP_BAR_HEIGHT,
   linuxAutostartEntry,
@@ -8,7 +8,7 @@ import {
   titleBarOptions,
   titleBarOverlay,
   trayActions,
-  trayBackupLines,
+  trayAttention,
   trayStatusLine,
   windowMaterial
 } from '../../src/main/os-helpers'
@@ -167,37 +167,60 @@ describe('windowMaterial', () => {
   })
 })
 
-describe('trayBackupLines', () => {
-  const at = new Date(2026, 10, 3, 15, 0)
-  test('one line per backup, saying how it is doing', () => {
+describe('trayAttention', () => {
+  const result = (sourceId: string, status: 'completed' | 'failed') => ({
+    sourceId,
+    destId: 'd1',
+    runId: 'r',
+    endedAt: new Date(2026, 10, 3, 13, 0).toISOString(),
+    status,
+    bytesWritten: 0
+  })
+  test('nothing when every backup is fine, not set up or paused', () => {
     const c = cfg()
-    c.destinations.push({ ...newDestination('/usb', 'USB stick'), id: 'd2' })
-    c.sources.push({
-      ...newSource('/c', 'Tax', ['Documents', 'Photos']),
-      id: 's3',
-      setupComplete: false
+    c.sources[1] = { ...c.sources[1], setupComplete: false }
+    expect(trayAttention(c, [result('s1', 'completed')], idle())).toBeNull()
+  })
+  test('one backup with a problem is named and opens that backup', () => {
+    expect(trayAttention(cfg(), [result('s2', 'failed')], idle())).toEqual({
+      id: 's2',
+      label: 'Photos failed'
     })
-    c.sources.push({
-      ...newSource('/d', 'Old', ['Documents', 'Photos', 'Tax']),
-      id: 's4',
-      enabled: false
+    const st = idle({ pendingRetries: [{ sourceId: 's1', destId: 'd1', nextRetryAt: null }] })
+    expect(trayAttention(cfg(), [], st)).toEqual({
+      id: 's1',
+      label: 'Documents is waiting for NAS'
     })
-    const results = [
-      {
-        sourceId: 's1',
+  })
+  test('several problems become one line that opens the app', () => {
+    const st = idle({ pendingRetries: [{ sourceId: 's1', destId: 'd1', nextRetryAt: null }] })
+    expect(trayAttention(cfg(), [result('s2', 'failed')], st)).toEqual({
+      id: null,
+      label: '2 backups need attention'
+    })
+  })
+})
+
+describe('tray menu with many backups', () => {
+  test('stays the same short size however many backups are scheduled', () => {
+    const c = defaultConfig()
+    c.destinations.push({ ...newDestination('/n', 'NAS'), id: 'd1' })
+    const nextRuns: SchedulerStatus['nextRuns'] = []
+    const results: PairResult[] = []
+    for (let i = 0; i < 200; i++) {
+      c.sources.push({ ...newSource(`/s${i}`, `Backup ${i}`, []), id: `s${i}` })
+      nextRuns.push({ sourceId: `s${i}`, at: new Date(2026, 9, 26, 14).toISOString() })
+      results.push({
+        sourceId: `s${i}`,
         destId: 'd1',
         runId: 'r',
-        endedAt: new Date(2026, 10, 3, 13, 0).toISOString(),
-        status: 'completed' as const,
+        endedAt: now.toISOString(),
+        status: 'failed' as const,
         bytesWritten: 0
-      }
-    ]
-    const st = idle({ pendingRetries: [{ sourceId: 's2', destId: 'd2', nextRetryAt: null }] })
-    expect(trayBackupLines(c, results, st, at)).toEqual([
-      { id: 's1', label: 'Documents — backed up 2 hours ago' },
-      { id: 's2', label: 'Photos — waiting for USB stick' },
-      { id: 's3', label: 'Tax — not set up' },
-      { id: 's4', label: 'Old — paused' }
-    ])
+      })
+    }
+    const st = idle({ nextRuns })
+    expect(trayStatusLine(st, c, now)).toBe('Idle · next: Backup 0 and 199 more at 14:00')
+    expect(trayAttention(c, results, st)?.label).toBe('200 backups need attention')
   })
 })

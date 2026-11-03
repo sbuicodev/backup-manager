@@ -133,13 +133,17 @@ export async function prepareMirrorZip(ctx: JobContext): Promise<PreparedJob> {
   const existing: string[] = []
   for (const { root, prefix } of layout.reads) {
     existing.push(...(await archivesIn(root, prefix)))
-    // In layout 3 a folder item's archives sit in its own subfolder (also one no longer listed).
+    // In layout 3 a folder item's archives sit in its own folder, which may be inside
+    // subfolders (also ones no longer listed).
     if (prefix === '' && ctx.itemized && (layout.move === 'none' || layout.move === 'mark')) {
-      for (const e of await ctx.dest.list(root)) {
-        if (e.isDir && !skipTop(e.name)) {
-          existing.push(...(await archivesIn(`${root}/${e.name}`, `${e.name}/`)))
+      const down = async (dir: string, rel: string): Promise<void> => {
+        for (const e of await ctx.dest.list(dir)) {
+          if (!e.isDir || (dir === root && skipTop(e.name))) continue
+          existing.push(...(await archivesIn(`${dir}/${e.name}`, `${rel}${e.name}/`)))
+          await down(`${dir}/${e.name}`, `${rel}${e.name}/`)
         }
       }
+      await down(root, '')
     }
   }
   const emptySource = looksUnmounted(ctx, existing.length > 0)
