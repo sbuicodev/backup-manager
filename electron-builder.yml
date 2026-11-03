@@ -24,11 +24,10 @@ extraResources:
       - tray*.png
 win:
   executableName: backup-manager
+  # The architecture comes from the command line (--x64 or --arm64): listing one here too would
+  # add it to every build, plus a combined installer holding both.
   target:
-    # x64 is Intel and AMD PCs; it also runs on Windows on ARM through emulation.
-    - target: nsis
-      arch:
-        - x64
+    - nsis
 nsis:
   artifactName: ${name}-${version}-${arch}-setup.${ext}
   shortcutName: ${productName}
