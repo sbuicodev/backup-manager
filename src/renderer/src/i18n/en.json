@@ -188,27 +188,10 @@
     "changedCount_other": "{{count}} changed",
     "nextAt": "next {{time}}",
     "backUpNow": "Back Up Now",
-    "history": "History",
-    "trashFor": "deleted items to Trash for {{count}} days",
-    "trashForever": "deleted items to Trash",
-    "removeDeleted": "deleted items removed",
-    "keepDeleted": "deleted items kept",
-    "keepVersions": "keeps at least {{count}} versions",
-    "versionsFor": "for {{count}} days",
-    "skips_one": "skips {{count}} pattern",
-    "skips_other": "skips {{count}} patterns",
-    "compressed": "level {{level}}",
-    "splitAt": "split at {{size}}",
-    "flat": "contents directly in “{{folder}}”",
-    "byName": "each item by name in “{{folder}}”",
-    "folderLine": "Folder name: {{text}}"
+    "history": "History"
   },
   "assistant": {
-    "steps": [
-      "What to back up",
-      "Where it goes",
-      "How and when"
-    ],
+    "steps": ["What to back up", "Where it goes", "How and when"],
     "step": "Step {{n}} of {{total}}",
     "createFailed": "Couldn’t create the backup",
     "otherFolder": "New Destination…",
@@ -264,7 +247,6 @@
     "backups": "Backups",
     "drives": "Destinations",
     "addDrive": "New Destination",
-    "withTone": "{{name}} — {{tone}}",
     "notConnected": "{{name}} (not connected)",
     "backUpNow": "Back Up Now",
     "pause": "Pause This Backup",
@@ -284,8 +266,7 @@
     "removeFrom": " It’s also removed from: {{names}}.",
     "removeAction": "Remove",
     "copySuffix": "{{name}} copy",
-    "addBackup": "New Backup",
-    "new": "New…"
+    "addBackup": "New Backup"
   },
   "drive": {
     "checking": "Checking…",
@@ -322,7 +303,6 @@
     "glass": "Glass appearance",
     "glassHint": "Frosted, translucent panels over the desktop.",
     "background": "Background",
-    "backgroundHint": "How the app runs scheduled backups.",
     "login": "Open at login",
     "loginHint": "Starts hidden in the menu bar or system tray.",
     "battery": "Skip scheduled backups on battery",
@@ -336,7 +316,10 @@
     "saveExcludes": "Save Exclusions",
     "file": "Configuration file",
     "export": "Export…",
-    "import": "Import…"
+    "import": "Import…",
+    "done": "Done",
+    "excludesLabel": "Skip in every backup",
+    "location": "Saved at"
   },
   "destination": {
     "edit": "Edit Destination",
@@ -365,10 +348,6 @@
     "count": "{{shown}} of {{total}}",
     "more": "Load More"
   },
-  "topbar": {
-    "expand": "Expand sidebar",
-    "collapse": "Collapse sidebar"
-  },
   "items": {
     "newFolder": "New Subfolder",
     "newFolderName": "New Folder",
@@ -390,5 +369,37 @@
     "rename": "Rename",
     "removeFolderAction": "Remove Subfolder",
     "toTopLevel": "Drop here to move to the top level"
+  },
+  "tiles": {
+    "schedule": "Schedule",
+    "manualHint": "Runs when you click Back Up Now",
+    "retries": "Retries when reconnected",
+    "versions": "Versions",
+    "snapshot": "Dated versions",
+    "mirror": "One up-to-date copy",
+    "keepAtLeast_one": "Keeps at least {{count}} version",
+    "keepAtLeast_other": "Keeps at least {{count}} versions",
+    "deleted": {
+      "trash": "Deleted items move to Trash",
+      "exact": "Deleted items are removed",
+      "never": "Deleted items stay in the backup"
+    },
+    "maxAge": "Older than {{count}} days removed",
+    "trashForever": "Trash: kept forever",
+    "trashDays": "Trash: {{count}} days",
+    "storage": "Storage",
+    "compression": "Compression {{level}} of 9",
+    "skips": "Skips {{list}}",
+    "splitAt": "Split at {{size}}",
+    "exclusions_one": "{{count}} exclusion",
+    "exclusions_other": "{{count}} exclusions",
+    "destination": "On the destination",
+    "flat": "Contents of {{name}}",
+    "byName": "Each item by name",
+    "subfolders_one": "{{count}} subfolder",
+    "subfolders_other": "{{count}} subfolders",
+    "aliases_one": "{{count}} alias",
+    "aliases_other": "{{count}} aliases",
+    "asIs": "Copied as they are"
   }
 }

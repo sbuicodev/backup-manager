@@ -4,8 +4,7 @@ import type { Plan } from '@shared/types'
 import { formatBytes } from './format'
 
 /** What the detail pane shows. */
-export type Selection =
-  { kind: 'backup' | 'drive'; id: string } | { kind: 'activity' | 'settings' | 'empty' }
+export type Selection = { kind: 'backup' | 'drive'; id: string } | { kind: 'activity' | 'empty' }
 
 /**
  * A selection that still exists: a removed backup or drive falls back to the first backup, a

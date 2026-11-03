@@ -474,7 +474,9 @@ describe('item subfolders', () => {
   const errors = (r: ReturnType<typeof validateConfig>): string =>
     r.ok ? '' : r.errors.join(' | ')
   test('a nested subfolder is fine', () => {
-    expect(withItems([{ path: '/x/Logic', kind: 'folder', folder: 'Music/Projects' }]).ok).toBe(true)
+    expect(withItems([{ path: '/x/Logic', kind: 'folder', folder: 'Music/Projects' }]).ok).toBe(
+      true
+    )
   })
   test.each(['.hidden', '../up', 'a/../b', 'a//b', '/abs', 'a\\b'])('"%s" is refused', (folder) => {
     expect(errors(withItems([{ path: '/x/a.txt', kind: 'file', folder }]))).toMatch(/subfolder/)

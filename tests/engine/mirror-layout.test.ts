@@ -254,7 +254,11 @@ test('a move up interrupted part-way finishes on the next run', async () => {
 
 test('items in subfolders are stored inside them, plain or zipped, and stay unchanged', async () => {
   for (const packaging of ['copy', 'zip-children'] as const) {
-    const w = await world({ 'a.txt': 'a', 'docs/b.txt': 'b' }, { legacyFlatName: null, packaging }, { withFile: true })
+    const w = await world(
+      { 'a.txt': 'a', 'docs/b.txt': 'b' },
+      { legacyFlatName: null, packaging },
+      { withFile: true }
+    )
     w.cfg.sources[0].items = w.cfg.sources[0].items.map((it) => ({
       ...it,
       folder: it.kind === 'folder' ? 'Projects' : 'Prefs/Logic'
@@ -284,7 +288,10 @@ test('an alias names the item at the destination, also for a single folder', asy
   w.cfg.sources[0].items[0] = { ...w.cfg.sources[0].items[0], alias: 'Projects' }
   w.cfg.sources[0].items[1] = { ...w.cfg.sources[0].items[1], folder: 'Prefs', alias: 'n.txt' }
   await w.run()
-  expect(await readTree(w.S, { hidden: false })).toEqual({ 'Prefs/n.txt': 'n', 'Projects/a.txt': 'a' })
+  expect(await readTree(w.S, { hidden: false })).toEqual({
+    'Prefs/n.txt': 'n',
+    'Projects/a.txt': 'a'
+  })
   w.cfg.sources[0].items.pop()
   await w.run()
   expect(Object.keys(await readTree(w.S, { hidden: false }))).toContain('Projects/a.txt')

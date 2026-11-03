@@ -3,10 +3,9 @@ import { useState } from 'react'
 import { Download, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Config, Settings as SettingsT } from '@shared/schema'
-import { PageHeader } from '@/components/PageHeader'
+import { Group, Row } from '@/components/BackupForm'
+import { SectionSheet } from '@/components/SectionSheet'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -19,34 +18,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
 import type { UseConfig } from '@/hooks/useConfig'
 
-function Row({
-  label,
-  hint,
-  children
-}: {
-  label: string
-  hint?: string
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <div className="flex items-center justify-between gap-6 py-3">
-      <div>
-        <Label>{label}</Label>
-        {hint && <p className="text-muted-foreground mt-1 text-xs">{hint}</p>}
-      </div>
-      {children}
-    </div>
-  )
-}
-
+/** The app's settings, in a sheet laid out like a backup's configuration. Changes save at once. */
 export function Settings({
   cfg,
   config,
-  path
+  path,
+  onClose
 }: {
   cfg: UseConfig
   config: Config
   path: string
+  onClose: () => void
 }): React.JSX.Element {
   const [excludes, setExcludes] = useState(config.globalExcludes.join('\n'))
   const save = async (next: Config): Promise<void> => {
@@ -75,97 +57,84 @@ export function Settings({
   }
 
   return (
-    <div>
-      <PageHeader title={t('settings.title')} />
+    <SectionSheet
+      title={t('settings.title')}
+      description={t('settings.title')}
+      onClose={onClose}
+      footer={<Button onClick={onClose}>{t('settings.done')}</Button>}
+    >
       <div className="grid gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('settings.appearance')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Row label={t('settings.glass')} hint={t('settings.glassHint')}>
-              <Switch
-                checked={config.settings.glass}
-                onCheckedChange={(v) => void setSetting('glass', v)}
-              />
-            </Row>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('settings.background')}</CardTitle>
-            <CardDescription>{t('settings.backgroundHint')}</CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y">
-            <Row label={t('settings.login')} hint={t('settings.loginHint')}>
-              <Switch
-                checked={config.settings.launchAtLogin}
-                onCheckedChange={(v) => void setSetting('launchAtLogin', v)}
-              />
-            </Row>
-            <Row label={t('settings.battery')} hint={t('settings.batteryHint')}>
-              <Switch
-                checked={config.settings.skipScheduledOnBattery}
-                onCheckedChange={(v) => void setSetting('skipScheduledOnBattery', v)}
-              />
-            </Row>
-            <Row label={t('settings.notifications')}>
-              <Select
-                value={config.settings.notifications}
-                onValueChange={(v) =>
-                  void setSetting('notifications', v as SettingsT['notifications'])
-                }
-              >
-                <SelectTrigger className="w-56">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="problems">{t('settings.problems')}</SelectItem>
-                  <SelectItem value="always">{t('settings.always')}</SelectItem>
-                  <SelectItem value="never">{t('settings.never')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </Row>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('settings.excludes')}</CardTitle>
-            <CardDescription>{t('settings.excludesHint')}</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3">
+        <Group title={t('settings.appearance')} id="appearance">
+          <Row label={t('settings.glass')} hint={t('settings.glassHint')}>
+            <Switch
+              checked={config.settings.glass}
+              onCheckedChange={(v) => void setSetting('glass', v)}
+            />
+          </Row>
+        </Group>
+        <Group title={t('settings.background')} id="background">
+          <Row label={t('settings.login')} hint={t('settings.loginHint')}>
+            <Switch
+              checked={config.settings.launchAtLogin}
+              onCheckedChange={(v) => void setSetting('launchAtLogin', v)}
+            />
+          </Row>
+          <Row label={t('settings.battery')} hint={t('settings.batteryHint')}>
+            <Switch
+              checked={config.settings.skipScheduledOnBattery}
+              onCheckedChange={(v) => void setSetting('skipScheduledOnBattery', v)}
+            />
+          </Row>
+          <Row label={t('settings.notifications')}>
+            <Select
+              value={config.settings.notifications}
+              onValueChange={(v) =>
+                void setSetting('notifications', v as SettingsT['notifications'])
+              }
+            >
+              <SelectTrigger className="w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="problems">{t('settings.problems')}</SelectItem>
+                <SelectItem value="always">{t('settings.always')}</SelectItem>
+                <SelectItem value="never">{t('settings.never')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </Row>
+        </Group>
+        <Group title={t('settings.excludes')} id="exclusions">
+          <Row label={t('settings.excludesLabel')} hint={t('settings.excludesHint')} stack>
             <Textarea
               rows={5}
               className="font-mono text-xs"
               value={excludes}
               onChange={(e) => setExcludes(e.target.value)}
             />
-            <div>
-              <Button
-                variant="outline"
-                onClick={saveExcludes}
-                disabled={excludes === config.globalExcludes.join('\n')}
-              >
-                {t('settings.saveExcludes')}
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={saveExcludes}
+              disabled={excludes === config.globalExcludes.join('\n')}
+            >
+              {t('settings.saveExcludes')}
+            </Button>
+          </Row>
+        </Group>
+        <Group title={t('settings.file')} id="file">
+          <Row label={t('settings.location')} hint={path} stack>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => void api.config.export()}>
+                <Download /> {t('settings.export')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={doImport}>
+                <Upload /> {t('settings.import')}
               </Button>
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('settings.file')}</CardTitle>
-            <CardDescription className="font-mono text-xs break-all">{path}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex gap-2">
-            <Button variant="outline" onClick={() => void api.config.export()}>
-              <Download /> {t('settings.export')}
-            </Button>
-            <Button variant="outline" onClick={doImport}>
-              <Upload /> {t('settings.import')}
-            </Button>
-          </CardContent>
-        </Card>
+          </Row>
+        </Group>
       </div>
-    </div>
+    </SectionSheet>
   )
 }

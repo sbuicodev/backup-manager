@@ -211,30 +211,6 @@ function useGlassClasses(glass: boolean): void {
   }, [glass])
 }
 
-const COLLAPSED_KEY = 'sidebar-collapsed'
-
-/** Sidebar collapsed state, remembered in this window's local storage when it is available. */
-function useSidebarCollapsed(): [boolean, () => void] {
-  const [collapsed, setCollapsed] = useState(() => {
-    try {
-      // Collapsed unless the user last left it expanded.
-      return localStorage.getItem(COLLAPSED_KEY) !== '0'
-    } catch {
-      return true
-    }
-  })
-  const toggle = (): void =>
-    setCollapsed((c) => {
-      try {
-        localStorage.setItem(COLLAPSED_KEY, c ? '0' : '1')
-      } catch {
-        // not remembered; the toggle still works for this session
-      }
-      return !c
-    })
-  return [collapsed, toggle]
-}
-
 function App(): React.JSX.Element {
   const cfg = useConfig()
   const status = useSchedulerStatus()
@@ -257,6 +233,7 @@ function App(): React.JSX.Element {
   const selectRef = useRef<(s: Selection) => void>(() => {})
   const runIdAfterLeave = useRef<string | undefined>(undefined)
   const [creating, setCreating] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   useEffect(() => {
     if (!dirty) return
     // Quitting with unsaved edits: main shows a Discard / Cancel prompt.
@@ -267,7 +244,6 @@ function App(): React.JSX.Element {
     window.addEventListener('beforeunload', guard)
     return () => window.removeEventListener('beforeunload', guard)
   }, [dirty])
-  const [collapsed, toggleSidebar] = useSidebarCollapsed()
   const glass = cfg.state?.ok ? cfg.state.config.settings.glass : false
   useGlassClasses(glass)
 
@@ -275,8 +251,9 @@ function App(): React.JSX.Element {
     () =>
       // Notifications open a run in Activity; anything else goes to its new home.
       api.app.onNavigate((s, arg) => {
+        if (s === 'settings') return setSettingsOpen(true)
         runIdAfterLeave.current = s === 'history' ? arg : undefined
-        selectRef.current(s === 'settings' ? { kind: 'settings' } : { kind: 'activity' })
+        selectRef.current({ kind: 'activity' })
       }),
     []
   )
@@ -333,7 +310,7 @@ function App(): React.JSX.Element {
   return (
     <TooltipProvider>
       <div className="flex h-full flex-col">
-        <TopBar sidebar={{ collapsed, onToggle: toggleSidebar }}>
+        <TopBar>
           <SchedulerStatusControls status={status} config={config} />
         </TopBar>
         <div className="flex min-h-0 flex-1">
@@ -342,12 +319,12 @@ function App(): React.JSX.Element {
             config={config}
             selection={selection}
             onSelect={select}
-            collapsed={collapsed}
             status={status}
             results={results}
             availability={availability}
             runningSourceId={runningSourceId}
             onNewBackup={() => setCreating(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
           />
           <main className="flex min-w-0 flex-1 flex-col">
             <div className="flex-1 overflow-auto p-6">
@@ -397,14 +374,19 @@ function App(): React.JSX.Element {
                     openRunId={runId}
                   />
                 )}
-                {selection.kind === 'settings' && (
-                  <Settings cfg={cfg} config={config} path={cfg.state.path} />
-                )}
               </div>
             </div>
           </main>
         </div>
       </div>
+      {settingsOpen && (
+        <Settings
+          cfg={cfg}
+          config={config}
+          path={cfg.state.path}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
       {creating && (
         <Dialog open onOpenChange={(o) => !o && setCreating(false)}>
           <DialogContent className="sm:max-w-xl">

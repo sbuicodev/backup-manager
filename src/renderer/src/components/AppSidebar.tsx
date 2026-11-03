@@ -1,6 +1,6 @@
 import { t } from '@/i18n'
 import { useState } from 'react'
-import { Archive, HardDrive, History, Pause, Plus, Settings } from 'lucide-react'
+import { HardDrive, History, Pause, Plus, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Config, Destination, Source } from '@shared/schema'
 import type { PairResult, SchedulerStatus } from '@shared/types'
@@ -23,12 +23,6 @@ import {
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
 import type { UseConfig } from '@/hooks/useConfig'
 import { api } from '@/lib/api'
 import { duplicateSource, type Selection } from '@/lib/selection'
@@ -70,20 +64,18 @@ export function destinationsOf(config: Config, s: Source): Destination[] {
 
 function Row({
   selected,
-  collapsed,
   label,
   icon,
   muted,
   onClick
 }: {
   selected: boolean
-  collapsed: boolean
   label: string
   icon: React.ReactNode
   muted?: boolean
   onClick: () => void
 }): React.JSX.Element {
-  const button = (
+  return (
     <button
       aria-label={label}
       aria-current={selected ? 'page' : undefined}
@@ -97,15 +89,8 @@ function Row({
       )}
     >
       {icon}
-      <span className={cn('truncate transition-opacity', collapsed && 'opacity-0')}>{label}</span>
+      <span className="truncate">{label}</span>
     </button>
-  )
-  if (!collapsed) return button
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
-    </Tooltip>
   )
 }
 
@@ -128,15 +113,12 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }): 
 }
 
 function Heading({
-  collapsed,
   children,
   action
 }: {
-  collapsed: boolean
   children: string
   action?: React.ReactNode
 }): React.JSX.Element {
-  if (collapsed) return <div className="bg-border mx-2 my-2 h-px" />
   return (
     <div className="text-muted-foreground mt-3 mb-1 flex h-6 items-center justify-between px-2.5 text-xs font-medium">
       {children}
@@ -151,24 +133,25 @@ export function AppSidebar({
   config,
   selection,
   onSelect,
-  collapsed,
   status,
   results,
   availability,
   runningSourceId,
-  onNewBackup
+  onNewBackup,
+  onOpenSettings
 }: {
   cfg: UseConfig
   config: Config
   selection: Selection
   onSelect: (s: Selection) => void
-  collapsed: boolean
   status: SchedulerStatus | null
   results: PairResult[]
   availability: Record<string, boolean>
   runningSourceId: string | null
   /** Opens the new-backup sheet. */
   onNewBackup: () => void
+  /** Opens the settings sheet. */
+  onOpenSettings: () => void
 }): React.JSX.Element {
   const [editingDrive, setEditingDrive] = useState<Destination | 'new' | null>(null)
   const [deletingBackup, setDeletingBackup] = useState<Source | null>(null)
@@ -207,17 +190,9 @@ export function AppSidebar({
     : []
 
   return (
-    <aside
-      className={cn(
-        'bg-sidebar text-sidebar-foreground flex shrink-0 flex-col overflow-hidden border-r transition-[width] duration-200',
-        collapsed ? 'w-[60px]' : 'w-60'
-      )}
-    >
+    <aside className="bg-sidebar text-sidebar-foreground flex w-60 shrink-0 flex-col overflow-hidden border-r">
       <nav className="grid flex-1 auto-rows-max grid-cols-[minmax(0,1fr)] gap-0.5 overflow-y-auto p-3">
-        <Heading
-          collapsed={collapsed}
-          action={<AddButton label={t('sidebar.addBackup')} onClick={onNewBackup} />}
-        >
+        <Heading action={<AddButton label={t('sidebar.addBackup')} onClick={onNewBackup} />}>
           {t('sidebar.backups')}
         </Heading>
         {config.sources.map((s) => {
@@ -234,27 +209,17 @@ export function AppSidebar({
                 <div>
                   <Row
                     selected={sel('backup', s.id)}
-                    collapsed={collapsed}
-                    label={
-                      collapsed
-                        ? t('sidebar.withTone', { name: s.name, tone: toneLabel(tone) })
-                        : s.name
-                    }
+                    label={s.name}
                     muted={tone === 'notSetUp' || tone === 'paused'}
                     onClick={() => onSelect({ kind: 'backup', id: s.id })}
                     icon={
                       <span className="relative flex size-4 shrink-0 items-center justify-center">
-                        {collapsed && <Archive className="size-4" />}
-                        {tone === 'paused' && !collapsed ? (
+                        {tone === 'paused' ? (
                           <Pause className="text-muted-foreground size-3" />
                         ) : (
                           <span
                             aria-label={toneLabel(tone)}
-                            className={cn(
-                              'rounded-full',
-                              collapsed ? 'absolute -right-0.5 -bottom-0.5 size-2' : 'size-2',
-                              DOT[tone]
-                            )}
+                            className={cn('size-2 rounded-full', DOT[tone])}
                           />
                         )}
                       </span>
@@ -301,7 +266,6 @@ export function AppSidebar({
         })}
 
         <Heading
-          collapsed={collapsed}
           action={
             <AddButton label={t('sidebar.addDrive')} onClick={() => setEditingDrive('new')} />
           }
@@ -314,7 +278,6 @@ export function AppSidebar({
               <div>
                 <Row
                   selected={sel('drive', d.id)}
-                  collapsed={collapsed}
                   label={
                     availability[d.id] === false
                       ? t('sidebar.notConnected', { name: d.name })
@@ -344,45 +307,24 @@ export function AppSidebar({
           </ContextMenu>
         ))}
 
-        <Heading collapsed={collapsed}> </Heading>
+        <div className="h-4" />
         <Row
           selected={selection.kind === 'activity'}
-          collapsed={collapsed}
           label={t('sidebar.activity')}
           onClick={() => onSelect({ kind: 'activity' })}
           icon={<History className="size-4 shrink-0" />}
         />
       </nav>
 
-      <div className={cn('flex gap-1 border-t p-2', collapsed && 'flex-col')}>
-        {collapsed && (
-          // Collapsed, the headings and their + buttons are hidden: one menu offers both.
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                aria-label={t('sidebar.new')}
-                className="hover:bg-sidebar-accent/60 flex size-8 shrink-0 items-center justify-center rounded-md"
-              >
-                <Plus className="size-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="right" align="end">
-              <DropdownMenuItem onSelect={onNewBackup}>{t('sidebar.addBackup')}…</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setEditingDrive('new')}>
-                {t('sidebar.addDrive')}…
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+      <div className="flex gap-1 border-t p-2">
         <div className="flex-1" />
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               aria-label={t('sidebar.settings')}
-              onClick={() => onSelect({ kind: 'settings' })}
+              onClick={onOpenSettings}
               className={cn(
-                'hover:bg-sidebar-accent/60 flex size-8 shrink-0 items-center justify-center rounded-md',
-                selection.kind === 'settings' && 'bg-sidebar-accent'
+                'hover:bg-sidebar-accent/60 flex size-8 shrink-0 items-center justify-center rounded-md'
               )}
             >
               <Settings className="size-4" />

@@ -163,9 +163,12 @@ export function fileName(p: string): string {
  * directly in its backup folder; any other backup stores each item under its own name.
  */
 export function storesFlat(source: Pick<Source, 'items'>): boolean {
-  return source.items.length === 1 && source.items[0].kind === 'folder' &&
+  return (
+    source.items.length === 1 &&
+    source.items[0].kind === 'folder' &&
     !source.items[0].folder &&
     source.items[0].alias === undefined
+  )
 }
 
 function isSameOrInside(child: string, parent: string): boolean {
@@ -202,7 +205,10 @@ export const ConfigSchema = z
         if (prev !== undefined) issue(`"${prev}" and "${it.path}" have the same name "${name}"`)
         seen.set(name.toLowerCase(), it.path)
         const holder = s.items.find(
-          (o) => o !== it && o.kind === 'folder' && name.toLowerCase().startsWith(`${itemRel(o).toLowerCase()}/`)
+          (o) =>
+            o !== it &&
+            o.kind === 'folder' &&
+            name.toLowerCase().startsWith(`${itemRel(o).toLowerCase()}/`)
         )
         if (holder) issue(`"${name}" would be inside the backup of "${holder.path}"`)
         const outer = s.items.find(

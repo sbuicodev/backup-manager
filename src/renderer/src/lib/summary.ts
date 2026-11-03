@@ -1,5 +1,5 @@
 import { t } from '@/i18n'
-import { storesFlat, type Destination, type Schedule, type Source } from '@shared/schema'
+import { itemName, storesFlat, type Destination, type Schedule, type Source } from '@shared/schema'
 import type { PairResult, SchedulerStatus } from '@shared/types'
 import { formatAgo } from '@shared/time'
 import { checkClock, retryFor } from './retry'
@@ -95,47 +95,117 @@ const GB = 1024 ** 3
 const sizeText = (n: number): string =>
   n >= GB ? `${+(n / GB).toFixed(1)} GB` : `${Math.round(n / 1024 ** 2)} MB`
 
-export type SettingsLine = {
+export type Pill = { text: string; tone: 'accent' | 'success' | 'warning' | 'neutral' | 'pro' }
+
+export type SettingsTile = {
   /** The configuration section it opens (a BackupForm group id). */
   id: 'schedule' | 'versions' | 'zip' | 'general'
-  text: string
+  label: string
+  value: string
+  /** Extra lines, each with an icon name the page maps to a picture. */
+  details: Array<{
+    icon: 'hand' | 'trash' | 'layers' | 'filter' | 'gauge' | 'folders' | 'files'
+    text: string
+  }>
+  pills: Pill[]
 }
 
-/** A backup's settings in four short lines, for its page. */
-export function settingsLines(source: Source): SettingsLine[] {
-  const versions =
-    source.mode === 'snapshot'
-      ? [
-          t('summary.snapshot'),
-          t('page.keepVersions', { count: source.snapshot.keepMin }) +
-            (source.snapshot.maxAgeDays === null
-              ? ''
-              : ` ${t('page.versionsFor', { count: source.snapshot.maxAgeDays })}`)
-        ]
-      : [
-          t('summary.mirror'),
-          source.mirror.deletion === 'trash'
-            ? source.mirror.trashRetentionDays === null
-              ? t('page.trashForever')
-              : t('page.trashFor', { count: source.mirror.trashRetentionDays })
-            : t(source.mirror.deletion === 'exact' ? 'page.removeDeleted' : 'page.keepDeleted')
-        ]
+/** A backup's settings as four tiles: a headline value, detail lines and pills. */
+export function settingsTiles(source: Source): SettingsTile[] {
+  const snapshot = source.mode === 'snapshot'
   const zip = source.packaging !== 'copy'
-  const storage = [
-    t(`packaging.${source.packaging}`),
-    ...(zip ? [t('page.compressed', { level: source.zip.level })] : []),
-    ...(zip && source.zip.partLimitBytes !== null
-      ? [t('page.splitAt', { size: sizeText(source.zip.partLimitBytes) })]
-      : []),
-    ...(source.excludes.length > 0 && source.items.some((i) => i.kind === 'folder')
-      ? [t('page.skips', { count: source.excludes.length })]
-      : [])
-  ]
-  const folder = t(storesFlat(source) ? 'page.flat' : 'page.byName', { folder: source.slug })
+  const hasFolder = source.items.some((i) => i.kind === 'folder')
+  const subfolders = new Set(source.items.flatMap((i) => (i.folder ? [i.folder] : []))).size
+  const aliases = source.items.filter((i) => i.alias !== undefined).length
+  const { deletion, trashRetentionDays: days } = source.mirror
   return [
-    { id: 'schedule', text: schedulePhrase(source.schedule) },
-    { id: 'versions', text: versions.join(' · ') },
-    { id: 'zip', text: storage.join(' · ') },
-    { id: 'general', text: t('page.folderLine', { text: folder }) }
+    {
+      id: 'schedule',
+      label: t('tiles.schedule'),
+      value: schedulePhrase(source.schedule),
+      details: source.schedule ? [] : [{ icon: 'hand', text: t('tiles.manualHint') }],
+      pills:
+        source.schedule && source.retryWhenAvailable
+          ? [{ text: t('tiles.retries'), tone: 'accent' }]
+          : []
+    },
+    {
+      id: 'versions',
+      label: t('tiles.versions'),
+      value: t(snapshot ? 'tiles.snapshot' : 'tiles.mirror'),
+      details: snapshot
+        ? [{ icon: 'layers', text: t('tiles.keepAtLeast', { count: source.snapshot.keepMin }) }]
+        : [{ icon: 'trash', text: t(`tiles.deleted.${deletion}`) }],
+      pills: snapshot
+        ? source.snapshot.maxAgeDays === null
+          ? []
+          : [{ text: t('tiles.maxAge', { count: source.snapshot.maxAgeDays }), tone: 'warning' }]
+        : deletion === 'trash'
+          ? [
+              {
+                text:
+                  days === null ? t('tiles.trashForever') : t('tiles.trashDays', { count: days }),
+                tone: 'success'
+              }
+            ]
+          : []
+    },
+    {
+      id: 'zip',
+      label: t('tiles.storage'),
+      value: t(`packaging.${source.packaging}`),
+      details: [
+        ...(zip
+          ? [{ icon: 'gauge' as const, text: t('tiles.compression', { level: source.zip.level }) }]
+          : [{ icon: 'files' as const, text: t('tiles.asIs') }]),
+        ...(hasFolder && source.excludes.length > 0
+          ? [
+              {
+                icon: 'filter' as const,
+                text: t('tiles.skips', { list: source.excludes.join(', ') })
+              }
+            ]
+          : [])
+      ],
+      pills: [
+        ...(zip && source.zip.partLimitBytes !== null
+          ? [
+              {
+                text: t('tiles.splitAt', { size: sizeText(source.zip.partLimitBytes) }),
+                tone: 'warning' as const
+              }
+            ]
+          : []),
+        ...(hasFolder && source.excludes.length > 0
+          ? [
+              {
+                text: t('tiles.exclusions', { count: source.excludes.length }),
+                tone: 'neutral' as const
+              }
+            ]
+          : [])
+      ]
+    },
+    {
+      id: 'general',
+      label: t('tiles.destination'),
+      value: `${source.slug}/`,
+      details: [
+        {
+          icon: 'folders',
+          text: storesFlat(source)
+            ? t('tiles.flat', { name: itemName(source.items[0]) })
+            : t('tiles.byName')
+        }
+      ],
+      pills: [
+        ...(subfolders > 0
+          ? [{ text: t('tiles.subfolders', { count: subfolders }), tone: 'pro' as const }]
+          : []),
+        ...(aliases > 0
+          ? [{ text: t('tiles.aliases', { count: aliases }), tone: 'pro' as const }]
+          : [])
+      ]
+    }
   ]
 }

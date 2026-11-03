@@ -4,7 +4,7 @@ import type { PairResult, SchedulerStatus } from '@shared/types'
 import {
   backupTone,
   formatAgo,
-  settingsLines,
+  settingsTiles,
   pairStatus,
   shortPath
 } from '../../src/renderer/src/lib/summary'
@@ -130,38 +130,60 @@ test('shortPath shows home folders as ~', () => {
   expect(shortPath('/Volumes/NAS/backups')).toBe('/Volumes/NAS/backups')
 })
 
-describe('settingsLines', () => {
-  const lines = (s: Source) => settingsLines(s).map((l) => [l.id, l.text])
+describe('settingsTiles', () => {
+  const tiles = (s: Source) =>
+    Object.fromEntries(
+      settingsTiles(s).map((x) => [
+        x.id,
+        { value: x.value, details: x.details.map((d) => d.text), pills: x.pills.map((p) => p.text) }
+      ])
+    )
   test('a copy of one folder, every day, trash and exclusions', () => {
     const s = src({
       excludes: ['*.tmp', 'node_modules/'],
       schedule: { kind: 'daily', time: '22:00' }
     })
     s.mirror = { deletion: 'trash', trashRetentionDays: 30 }
-    expect(lines(s)).toEqual([
-      ['schedule', 'Every day at 22:00'],
-      ['versions', 'Copy · deleted items to Trash for 30 days'],
-      ['zip', 'Plain files · skips 2 patterns'],
-      ['general', 'Folder name: contents directly in “Documents”']
-    ])
+    expect(tiles(s)).toEqual({
+      schedule: { value: 'Every day at 22:00', details: [], pills: ['Retries when reconnected'] },
+      versions: {
+        value: 'One up-to-date copy',
+        details: ['Deleted items move to Trash'],
+        pills: ['Trash: 30 days']
+      },
+      zip: {
+        value: 'Plain files',
+        details: ['Copied as they are', 'Skips *.tmp, node_modules/'],
+        pills: ['2 exclusions']
+      },
+      general: { value: 'Documents/', details: ['Contents of Documents'], pills: [] }
+    })
   })
-  test('versions of several items, zipped and split, by hand', () => {
+  test('versions of several items, zipped and split, by hand, with subfolders and an alias', () => {
     const s = src({
       mode: 'snapshot',
       packaging: 'zip-whole',
       schedule: null,
       items: [
-        { path: '/Users/me/Documents', kind: 'folder' },
+        { path: '/Users/me/Documents', kind: 'folder', folder: 'Work', alias: 'Docs' },
         { path: '/Users/me/notes.txt', kind: 'file' }
       ]
     })
     s.snapshot = { keepMin: 5, maxAgeDays: 30 }
     s.zip = { ...s.zip, level: 6, partLimitBytes: 4 * 1024 ** 3 }
-    expect(lines(s)).toEqual([
-      ['schedule', 'Manually'],
-      ['versions', 'Versions · keeps at least 5 versions for 30 days'],
-      ['zip', 'One zip · level 6 · split at 4 GB'],
-      ['general', 'Folder name: each item by name in “Documents”']
-    ])
+    expect(tiles(s)).toEqual({
+      schedule: { value: 'Manually', details: ['Runs when you click Back Up Now'], pills: [] },
+      versions: {
+        value: 'Dated versions',
+        details: ['Keeps at least 5 versions'],
+        pills: ['Older than 30 days removed']
+      },
+      zip: { value: 'One zip', details: ['Compression 6 of 9'], pills: ['Split at 4 GB'] },
+      general: {
+        value: 'Documents/',
+        details: ['Each item by name'],
+        pills: ['1 subfolder', '1 alias']
+      }
+    })
   })
 })
